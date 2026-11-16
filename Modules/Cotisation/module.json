@@ -1,0 +1,11 @@
+{
+    "name": "Cotisation",
+    "alias": "cotisation",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Cotisation\\Providers\\CotisationServiceProvider"
+    ],
+    "files": []
+}

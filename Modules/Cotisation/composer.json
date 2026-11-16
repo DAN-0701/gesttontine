@@ -1,0 +1,30 @@
+{
+    "name": "nwidart/cotisation",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Cotisation\\": "app/",
+            "Modules\\Cotisation\\Database\\Factories\\": "database/factories/",
+            "Modules\\Cotisation\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\Cotisation\\Tests\\": "tests/"
+        }
+    }
+}
