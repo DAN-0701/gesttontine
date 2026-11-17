@@ -25,7 +25,7 @@ class members extends Model
 
     ];
     public function cycle(){
-        return $this->belongsToMany(cycle::class)->withPivot('rang');
+        return $this->belongsToMany(cycle::class, 'cycle_member', 'member_id', 'cycle_id')->withPivot('rang');
     }
     public function cycleMembers(){
         return $this->hasMany(CycleMembers::class);

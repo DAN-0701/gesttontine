@@ -23,7 +23,7 @@ class cycle extends Model
         return $this->belongsTo(Users::class,'createur_id');
     }
     public function membres() {
-        return $this->belongsToMany( members::class)
+        return $this->belongsToMany(members::class, 'cycle_member', 'cycle_id', 'member_id')
                     ->withPivot('rang');
     }
     public function cycleMembers(){
