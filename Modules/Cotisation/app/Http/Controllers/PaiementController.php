@@ -39,7 +39,10 @@ class PaiementController extends Controller
     {
         $data = $request->validate([
             'cotisation_id' => 'required',
-            'montant'       => 'required|numeric|min:1'
+            'montant'       => 'required|numeric|min:1',
+            'mode'          => 'nullable|string',
+            'date_paiement' => 'nullable|date',
+            'reference'     => 'nullable|string',
         ]);
 
         $cotisation = Cotisation::findOrFail($data['cotisation_id']);
@@ -47,15 +50,19 @@ class PaiementController extends Controller
         Paiements::create([
             'cotisation_id'  => $data['cotisation_id'],
             'montant'        => $data['montant'],
-            'enregistre_par' => Auth::id() ?? 1
+            'date_paiement'  => $data['date_paiement'] ?? now()->toDateString(),
+            'mode'           => $data['mode'] ?? 'especes',
+            'reference'      => $data['reference'] ?? null,
+            'annule'         => false,
+            'enregistre_par' => Auth::id() ?? 1,
         ]);
 
         $cotisation->montant_paye += $data['montant'];
 
         if ($cotisation->montant_paye >= $cotisation->montant_attendu) {
-            $cotisation->statut = 'paye';
+            $cotisation->statut = 'payee';
         } else {
-            $cotisation->statut = 'partiel';
+            $cotisation->statut = 'partielle';
         }
 
         $cotisation->save();

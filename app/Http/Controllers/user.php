@@ -37,8 +37,7 @@ class user extends Controller
     /**
      * Création d'un nouvel utilisateur
      */
-    public function store(Request $request)
-    {
+    public function store(Request $request){
         $data = $request->validate([
             'name'      => 'required|string',
             'email'     => 'required|email|unique:users,email',

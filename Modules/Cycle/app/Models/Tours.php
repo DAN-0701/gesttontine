@@ -4,13 +4,12 @@ namespace Modules\Cycle\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Modules\Cotisation\Models\Cotisation;
-use Modules\Members\Models\Members;
+use Modules\Members\Models\members;
 
 class Tours extends Model
 {
-    /**
-     * The attributes that are mass assignable.
-     */
+    public $timestamps = false;
+
     protected $fillable = [
         'cycle_id',
         'beneficiaire_id',
@@ -18,14 +17,15 @@ class Tours extends Model
         'date_prevue',
         'statut'
     ];
+
     public function cycle()
     {
-        return $this->belongsTo(Cycle::class);
+        return $this->belongsTo(Cycle::class, 'cycle_id');
     }
 
     public function beneficiaire()
     {
-        return $this->belongsTo(Members::class, 'beneficiaire_id');
+        return $this->belongsTo(members::class, 'beneficiaire_id');
     }
 
     public function cotisations()

@@ -4,13 +4,22 @@ namespace Modules\Members\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Modules\Members\Models\members;
 
 class MembersController extends Controller
 {
+    private function checkGestionnaire()
+    {
+        $user = Auth::user();
+        if ($user && $user->role === 'tresorier') {
+            abort(403, 'Action non autorisée pour le trésorier.');
+        }
+    }
+
     /**
-     * Display a listing of the resource.
+     * Liste des membres (Image 03)
      */
     public function index(Request $request)
     {
@@ -42,26 +51,30 @@ class MembersController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
+     * Formulaire création d'un membre (Image 04)
      */
     public function create()
     {
+        $this->checkGestionnaire();
+
         return Inertia::render('Membres/Create');
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Enregistrer un nouveau membre
      */
     public function store(Request $request)
     {
+        $this->checkGestionnaire();
+
         $data = $request->validate([
-            'nom'           => 'required',
-            'prenom'        => 'required',
-            'email'         => 'required|nullable|email|unique:members',
-            'telephone'     => 'required|unique:members',
-            'adresse'       => 'required',
+            'nom'           => 'required|string',
+            'prenom'        => 'required|string',
+            'email'         => 'nullable|email|unique:members,email',
+            'telephone'     => 'required|unique:members,telephone',
+            'adresse'       => 'required|string',
             'date_adhesion' => 'required|date',
-            'statut'        => 'required|in:actif,sorti,desactive'
+            'statut'        => 'required|in:actif,desactive'
         ]);
 
         members::create($data);
@@ -70,38 +83,37 @@ class MembersController extends Controller
     }
 
     /**
-     * Show the specified resource.
-     */
-    public function show(members $member)
-    {
-        return Inertia::render('Membres/Create', [
-            'member' => $member
-        ]);
-    }
-
-    /**
-     * Show the form for editing the specified resource.
+     * Afficher ou éditer un membre avec les anciennes valeurs pré-remplies
      */
     public function edit(members $member)
     {
-        return Inertia::render('Membres/Create', [
+        $this->checkGestionnaire();
+
+        return Inertia::render('Membres/Edit', [
             'member' => $member
         ]);
     }
 
+    public function show(members $member)
+    {
+        return $this->edit($member);
+    }
+
     /**
-     * Update the specified resource in storage.
+     * Mettre à jour un membre
      */
     public function update(Request $request, members $member)
     {
+        $this->checkGestionnaire();
+
         $data = $request->validate([
-            'nom'           => 'required',
-            'prenom'        => 'required',
+            'nom'           => 'required|string',
+            'prenom'        => 'required|string',
             'telephone'     => 'required|unique:members,telephone,' . $member->id,
-            'email'         => 'required|nullable|email|unique:members,email,' . $member->id,
-            'adresse'       => 'required',
+            'email'         => 'nullable|email|unique:members,email,' . $member->id,
+            'adresse'       => 'required|string',
             'date_adhesion' => 'required|date',
-            'statut'        => 'required|in:actif,sorti,desactive'
+            'statut'        => 'required|in:actif,desactive'
         ]);
 
         $member->update($data);
@@ -110,10 +122,12 @@ class MembersController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Supprimer un membre
      */
     public function destroy(members $member)
     {
+        $this->checkGestionnaire();
+
         $member->delete();
 
         return redirect()->route('members.index')->with('success', 'Membre supprimé avec succès.');

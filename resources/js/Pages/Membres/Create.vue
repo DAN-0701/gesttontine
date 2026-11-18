@@ -7,7 +7,7 @@
                     &larr; Retour aux membres
                 </Link>
                 <h1 class="text-2xl font-bold text-gray-900">
-                    {{ isEditing ? 'Modifier le membre' : 'Nouveau membre' }}
+                    Nouveau membre
                 </h1>
                 <p class="text-sm text-gray-500 mt-1">
                     Le téléphone doit être unique dans toute la tontine.
@@ -24,7 +24,7 @@
                             <input
                                 v-model="form.nom"
                                 type="text"
-                                placeholder="Gnahoré"
+                                placeholder="ex: Gnahoré"
                                 class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                             />
                             <p v-if="form.errors.nom" class="mt-1 text-xs text-red-600">{{ form.errors.nom }}</p>
@@ -34,7 +34,7 @@
                             <input
                                 v-model="form.prenom"
                                 type="text"
-                                placeholder="Estelle"
+                                placeholder="ex: Estelle"
                                 class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                             />
                             <p v-if="form.errors.prenom" class="mt-1 text-xs text-red-600">{{ form.errors.prenom }}</p>
@@ -48,7 +48,7 @@
                             <input
                                 v-model="form.telephone"
                                 type="text"
-                                placeholder="0700123456"
+                                placeholder="ex: 0700123456"
                                 :class="[
                                     'w-full px-4 py-2.5 rounded-lg border text-sm text-gray-900 focus:outline-none',
                                     form.errors.telephone
@@ -65,7 +65,7 @@
                             <input
                                 v-model="form.email"
                                 type="email"
-                                placeholder="estelle.gnahore@mail.ci"
+                                placeholder="ex: estelle.gnahore@mail.ci"
                                 class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                             />
                             <p v-if="form.errors.email" class="mt-1 text-xs text-red-600">{{ form.errors.email }}</p>
@@ -78,7 +78,7 @@
                         <input
                             v-model="form.adresse"
                             type="text"
-                            placeholder="Quartier, commune"
+                            placeholder="ex: Quartier, commune"
                             class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                         />
                         <p v-if="form.errors.adresse" class="mt-1 text-xs text-red-600">{{ form.errors.adresse }}</p>
@@ -102,7 +102,7 @@
                                 class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                             >
                                 <option value="actif">Actif</option>
-                                <option value="sorti">Sorti</option>
+                                <option value="desactive">Désactivé</option>
                             </select>
                             <p v-if="form.errors.statut" class="mt-1 text-xs text-red-600">{{ form.errors.statut }}</p>
                         </div>
@@ -115,7 +115,7 @@
                             :disabled="form.processing"
                             class="px-5 py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50"
                         >
-                            {{ isEditing ? 'Mettre à jour le membre' : 'Enregistrer le membre' }}
+                            Enregistrer le membre
                         </button>
                         <Link
                             href="/membres"
@@ -131,31 +131,21 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
-const props = defineProps({
-    member: Object
-})
-
-const isEditing = computed(() => !!props.member?.id)
-
+// Champs vides avec placeholders explicites
 const form = useForm({
-    nom: props.member?.nom,
-    prenom: props.member?.prenom,
-    telephone: props.member?.telephone,
-    email: props.member?.email,
-    adresse: props.member?.adresse,
-    date_adhesion: props.member?.date_adhesion || new Date().toISOString().substring(0, 10),
-    statut: props.member?.statut || 'actif',
+    nom: '',
+    prenom: '',
+    telephone: '',
+    email: '',
+    adresse: '',
+    date_adhesion: new Date().toISOString().substring(0, 10),
+    statut: 'actif',
 })
 
 function submit() {
-    if (isEditing.value) {
-        form.put(`/membres/${props.member.id}`)
-    } else {
-        form.post('/membres')
-    }
+    form.post('/members')
 }
 </script>

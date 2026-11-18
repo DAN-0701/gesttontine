@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\user;
+use App\Models\administrateur;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 

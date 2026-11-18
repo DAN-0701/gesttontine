@@ -16,7 +16,7 @@ return new class extends Migration
                 $table->string('name');
                 $table->string('email')->unique();
                 $table->string('password');
-                $table->enum('role', ['gestionnaire', 'tresorier','administrateur'])->default('gestionnaire');
+                $table->enum('role', ['gestionnaire', 'tresorier'])->default('gestionnaire');
             });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

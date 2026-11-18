@@ -10,7 +10,7 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                <!-- Colonne Gauche: Liste des utilisateurs -->
+                <!-- Colonne Gauche: Liste des utilisateurs réels -->
                 <div class="md:col-span-7 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-sm">
@@ -23,7 +23,7 @@
                             </thead>
                             <tbody class="divide-y divide-gray-50">
                                 <tr
-                                    v-for="u in displayedUsers"
+                                    v-for="u in (users || [])"
                                     :key="u.id"
                                     class="hover:bg-gray-50/50 transition-colors"
                                 >
@@ -42,6 +42,11 @@
                                         </span>
                                     </td>
                                 </tr>
+                                <tr v-if="!users || users.length === 0">
+                                    <td colspan="3" class="py-6 text-center text-gray-400">
+                                        Aucun utilisateur enregistré.
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -57,6 +62,7 @@
                             <input
                                 v-model="form.name"
                                 type="text"
+                                placeholder="ex: Aya Konan"
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             />
                             <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
@@ -67,6 +73,7 @@
                             <input
                                 v-model="form.email"
                                 type="email"
+                                placeholder="ex: aya.konan@mail.ci"
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             />
                             <p v-if="form.errors.email" class="mt-1 text-xs text-red-600">{{ form.errors.email }}</p>
@@ -77,6 +84,7 @@
                             <input
                                 v-model="form.password"
                                 type="password"
+                                placeholder="•••••••• (min. 6 caractères)"
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             />
                             <p v-if="form.errors.password" class="mt-1 text-xs text-red-600">{{ form.errors.password }}</p>
@@ -101,7 +109,7 @@
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             >
                                 <option :value="null">Aucun</option>
-                                <option v-for="m in membres" :key="m.id" :value="m.id">
+                                <option v-for="m in (membres || [])" :key="m.id" :value="m.id">
                                     {{ m.nom }}
                                 </option>
                             </select>
@@ -122,22 +130,18 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
-    users: Array,
-    membres: Array,
-})
-
-const defaultUsers = [
-    { id: 1, name: 'Aya Konan', email: 'aya.konan@mail.ci', role: 'gestionnaire' },
-    { id: 2, name: 'Paul Koné', email: 'paul.kone@mail.ci', role: 'tresorier' },
-]
-
-const displayedUsers = computed(() => {
-    return (props.users && props.users.length > 0) ? props.users : defaultUsers
+    users: {
+        type: Array,
+        default: () => []
+    },
+    membres: {
+        type: Array,
+        default: () => []
+    },
 })
 
 const form = useForm({

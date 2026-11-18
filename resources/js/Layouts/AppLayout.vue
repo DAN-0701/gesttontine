@@ -129,12 +129,17 @@ import { Link, usePage } from '@inertiajs/vue3'
 
 const page = usePage()
 
-const menuItems = [
-    { href: '/dashboard', label: 'Tableau de bord' },
-    { href: '/membres', label: 'Membres' },
-    { href: '/cycles', label: 'Cycles' },
-    { href: '/utilisateurs', label: 'Utilisateurs' },
-]
+const menuItems = computed(() => {
+    const items = [
+        { href: '/dashboard', label: 'Tableau de bord' },
+        { href: '/membres', label: 'Membres' },
+        { href: '/cycles', label: 'Cycles' },
+    ]
+    if (currentUser.value.role !== 'tresorier') {
+        items.push({ href: '/utilisateurs', label: 'Utilisateurs' })
+    }
+    return items
+})
 
 function isActive(href) {
     const url = page.url

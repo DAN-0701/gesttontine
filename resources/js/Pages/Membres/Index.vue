@@ -7,7 +7,9 @@
                     <h1 class="text-2xl font-bold text-gray-900">Membres</h1>
                     <p class="text-sm text-gray-500 mt-1">Les personnes inscrites dans la tontine.</p>
                 </div>
+                <!-- Masqué pour le trésorier -->
                 <Link
+                    v-if="isGestionnaire"
                     href="/membres/create"
                     class="inline-flex items-center px-4 py-2 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
                 >
@@ -22,7 +24,7 @@
                     <input
                         v-model="search"
                         type="text"
-                        placeholder="0700"
+                        placeholder="ex: 0700 ou Kouadio"
                         class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"
                     />
                 </div>
@@ -34,7 +36,7 @@
                     >
                         <option value="tous">Tous</option>
                         <option value="actif">Actif</option>
-                        <option value="sorti">Sorti</option>
+                        <option value="desactive">Désactivé</option>
                     </select>
                 </div>
                 <div>
@@ -50,7 +52,7 @@
             <!-- Members Table Card -->
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <p v-if="search" class="text-sm text-gray-600 mb-4 font-medium">
-                    {{ displayedMembres.length }} résultats pour « {{ search }} »
+                    {{ displayedMembres.length }} résultat(s) pour « {{ search }} »
                 </p>
 
                 <div class="overflow-x-auto">
@@ -62,7 +64,7 @@
                                 <th class="pb-3 font-semibold">Email</th>
                                 <th class="pb-3 font-semibold">Adhésion</th>
                                 <th class="pb-3 font-semibold">Statut</th>
-                                <th class="pb-3 font-semibold text-right">Action</th>
+                                <th v-if="isGestionnaire" class="pb-3 font-semibold text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50">
@@ -86,12 +88,12 @@
                                                 : 'bg-gray-100 text-gray-600'
                                         ]"
                                     >
-                                        {{ membre.statut === 'actif' ? 'Actif' : 'Sorti' }}
+                                        {{ membre.statut === 'actif' ? 'Actif' : 'Désactivé' }}
                                     </span>
                                 </td>
-                                <td class="py-3.5 text-right">
+                                <td v-if="isGestionnaire" class="py-3.5 text-right">
                                     <Link
-                                        :href="`/membres/${membre.id}/edit`"
+                                        :href="`/members/${membre.id}/edit`"
                                         class="text-[#1B6B4A] hover:underline font-medium text-sm"
                                     >
                                         Modifier
@@ -99,8 +101,8 @@
                                 </td>
                             </tr>
                             <tr v-if="displayedMembres.length === 0">
-                                <td colspan="6" class="py-6 text-center text-gray-400">
-                                    Aucun membre trouvé
+                                <td :colspan="isGestionnaire ? 6 : 5" class="py-8 text-center text-gray-400">
+                                    Aucun membre enregistré en base de données.
                                 </td>
                             </tr>
                         </tbody>
@@ -110,7 +112,7 @@
 
             <!-- Footer Note -->
             <p class="text-xs text-gray-500">
-                Un membre sorti n'apparaît plus dans la sélection des membres d'un nouveau cycle.
+                Un membre désactivé n'apparaît plus dans la sélection des membres d'un nouveau cycle.
             </p>
         </div>
     </AppLayout>
@@ -118,58 +120,31 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Link, router } from '@inertiajs/vue3'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
-    membres: Array,
+    membres: {
+        type: Array,
+        default: () => []
+    },
     filters: Object,
 })
 
-const defaultMembresList = [
-    {
-        id: 1,
-        nom: 'Yao',
-        prenom: 'Koffi',
-        telephone: '0700123456',
-        email: 'koffi.yao@mail.ci',
-        date_adhesion: '2024-01-12',
-        statut: 'actif'
-    },
-    {
-        id: 2,
-        nom: 'Traoré',
-        prenom: 'Aya',
-        telephone: '0507001122',
-        email: 'aya.traore@mail.ci',
-        date_adhesion: '2024-01-12',
-        statut: 'actif'
-    },
-    {
-        id: 3,
-        nom: 'Ehui',
-        prenom: 'Jean-Marc',
-        telephone: '0700451208',
-        email: 'jm.ehui@mail.ci',
-        date_adhesion: '2024-03-03',
-        statut: 'actif'
-    },
-    {
-        id: 4,
-        nom: 'Gnahoré',
-        prenom: 'Bernard',
-        telephone: '0700998877',
-        email: 'b.gnahore@mail.ci',
-        date_adhesion: '2023-02-20',
-        statut: 'sorti'
-    }
-]
+const page = usePage()
+
+const isGestionnaire = computed(() => {
+    const role = page.props.auth?.user?.role
+    // Par défaut si non spécifié, considérer gestionnaire, sinon si trésorier -> false
+    return role !== 'tresorier'
+})
 
 const search = ref(props.filters?.search || '')
 const statut = ref(props.filters?.statut || 'tous')
 
+// Uniquement les membres réels de la base de données
 const displayedMembres = computed(() => {
-    let list = (props.membres && props.membres.length > 0) ? props.membres : defaultMembresList
+    let list = props.membres || []
 
     if (search.value) {
         const q = search.value.toLowerCase()

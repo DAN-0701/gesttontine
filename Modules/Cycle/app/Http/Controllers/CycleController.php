@@ -3,12 +3,11 @@
 namespace Modules\Cycle\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Modules\Cotisation\Models\Cotisation;
-use Modules\Cotisation\Models\Penalites;
 use Modules\Cycle\Models\Cycle;
 use Modules\Cycle\Models\CycleMembers;
 use Modules\Cycle\Models\Tours;
@@ -17,13 +16,32 @@ use Modules\Members\Models\members;
 class CycleController extends Controller
 {
     /**
+     * Vérifier si l'utilisateur connecté est gestionnaire
+     */
+    private function checkGestionnaire()
+    {
+        $user = Auth::user();
+        if ($user && $user->role === 'tresorier') {
+            abort(403, 'Action non autorisée pour le trésorier.');
+        }
+    }
+
+    /**
      * Tableau de bord principal (Image 02)
      */
     public function dashboard()
     {
+        // Chercher d'abord un cycle actif, sinon le dernier cycle créé (même en brouillon)
         $cycle = Cycle::where('statut', 'actif')
             ->with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
+            ->latest('id')
             ->first();
+
+        if (!$cycle) {
+            $cycle = Cycle::with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
+                ->latest('id')
+                ->first();
+        }
 
         $data = [
             'cycle' => null,
@@ -31,6 +49,10 @@ class CycleController extends Controller
 
         if ($cycle) {
             $tourOuvert = $cycle->tours->where('statut', 'ouvert')->first();
+            if (!$tourOuvert && $cycle->tours->count() > 0) {
+                $tourOuvert = $cycle->tours->first();
+            }
+
             $totalMembres = $cycle->membres->count();
 
             $encaisse = 0;
@@ -38,50 +60,51 @@ class CycleController extends Controller
             $montantRetard = 0;
             $retards = [];
 
-            if ($tourOuvert) {
+            if ($tourOuvert && $tourOuvert->cotisations) {
                 foreach ($tourOuvert->cotisations as $cotisation) {
                     $encaisse += $cotisation->montant_paye;
-                    if ($cotisation->statut === 'en_retard' || ($cotisation->montant_paye < $cotisation->montant_attendu && $cotisation->statut !== 'paye' && $cotisation->statut !== 'payee')) {
+                    if ($cotisation->statut === 'en_retard' || ($cotisation->montant_paye < $cotisation->montant_attendu && !in_array($cotisation->statut, ['paye', 'payee']))) {
                         $cotisationsEnRetard++;
                         $reste = $cotisation->montant_attendu - $cotisation->montant_paye;
                         $montantRetard += $reste;
                         $membre = $cotisation->membre;
                         $penalite = $cotisation->penalite;
                         $retards[] = [
-                            'membre' => $membre ? $membre->prenom . ' ' . $membre->nom : '',
+                            'membre'    => $membre ? $membre->prenom . ' ' . $membre->nom : '',
                             'telephone' => $membre ? $membre->telephone : '',
-                            'reste_du' => $reste,
-                            'penalite' => $penalite ? $penalite->montant : 2000,
+                            'reste_du'  => $reste,
+                            'penalite'  => $penalite ? $penalite->montant : 0,
                         ];
                     }
                 }
             }
 
-            $totalAttendu = $tourOuvert ? $tourOuvert->cotisations->sum('montant_attendu') : 0;
-            $membresPayes = $tourOuvert ? $tourOuvert->cotisations->whereIn('statut', ['paye', 'payee'])->count() : 0;
-            $cagnotte = $encaisse - ($cycle->frais_gestion ?? 0);
+            $totalAttendu = $tourOuvert && $tourOuvert->cotisations ? $tourOuvert->cotisations->sum('montant_attendu') : ($totalMembres * $cycle->montant_cotisation);
+            $membresPayes = $tourOuvert && $tourOuvert->cotisations ? $tourOuvert->cotisations->whereIn('statut', ['paye', 'payee'])->count() : 0;
+            $cagnotte = max(0, $encaisse - ($cycle->frais_gestion ?? 0));
 
             $data['cycle'] = [
-                'id' => $cycle->id,
-                'libelle' => $cycle->libelle,
-                'tour_actuel' => $tourOuvert ? $tourOuvert->numero : 1,
-                'total_tours' => $cycle->tours->count(),
-                'date_echeance' => $tourOuvert ? $tourOuvert->date_prevue : null,
-                'encaisse' => $encaisse,
-                'total_attendu' => $totalAttendu,
-                'membres_payes' => $membresPayes,
-                'total_membres' => $totalMembres,
-                'cotisations_en_retard' => $cotisationsEnRetard,
-                'montant_retard' => $montantRetard,
-                'penalites_dues' => count($retards),
-                'montant_penalite' => count($retards) * ($cycle->montant_penalite ?? 2000),
-                'cagnotte' => max(0, $cagnotte),
-                'frais_gestion' => $cycle->frais_gestion ?? 5000,
-                'beneficiaire' => $tourOuvert && $tourOuvert->beneficiaire ? [
-                    'nom' => $tourOuvert->beneficiaire->prenom . ' ' . $tourOuvert->beneficiaire->nom,
+                'id'                   => $cycle->id,
+                'libelle'              => $cycle->libelle,
+                'statut'               => $cycle->statut,
+                'tour_actuel'          => $tourOuvert ? $tourOuvert->numero : 1,
+                'total_tours'          => $cycle->tours->count() > 0 ? $cycle->tours->count() : $totalMembres,
+                'date_echeance'        => $tourOuvert ? $tourOuvert->date_prevue : null,
+                'encaisse'             => $encaisse,
+                'total_attendu'        => $totalAttendu,
+                'membres_payes'        => $membresPayes,
+                'total_membres'        => $totalMembres,
+                'cotisations_en_retard'=> $cotisationsEnRetard,
+                'montant_retard'       => $montantRetard,
+                'penalites_dues'       => count($retards),
+                'montant_penalite'     => count($retards) * ($cycle->montant_penalite ?? 0),
+                'cagnotte'             => $cagnotte,
+                'frais_gestion'        => $cycle->frais_gestion ?? 0,
+                'beneficiaire'         => $tourOuvert && $tourOuvert->beneficiaire ? [
+                    'nom'  => $tourOuvert->beneficiaire->prenom . ' ' . $tourOuvert->beneficiaire->nom,
                     'rang' => $tourOuvert->numero,
                 ] : null,
-                'retards' => $retards,
+                'retards'              => $retards,
             ];
         }
 
@@ -123,40 +146,94 @@ class CycleController extends Controller
      */
     public function create()
     {
+        $this->checkGestionnaire();
+
         $membresDisponibles = members::where('statut', 'actif')->get()->map(fn($m) => [
-            'id' => $m->id,
-            'nom' => $m->prenom . ' ' . $m->nom,
-            'telephone' => $m->telephone,
+            'id'         => $m->id,
+            'nom'        => $m->prenom . ' ' . $m->nom,
+            'telephone'  => $m->telephone,
             'dans_cycle' => false,
         ]);
 
         return Inertia::render('Cycles/Create', [
             'membresDisponibles' => $membresDisponibles,
-            'membresDuCycle' => [],
+            'membresDuCycle'     => [],
         ]);
     }
 
     /**
-     * Enregistrer un nouveau cycle (brouillon)
+     * Enregistrer un nouveau cycle (brouillon) avec ses membres
      */
     public function store(Request $request)
     {
+        $this->checkGestionnaire();
+
         $data = $request->validate([
-            'libelle'               => 'required',
+            'libelle'               => 'required|string',
             'montant_cotisation'    => 'required|numeric|min:1',
-            'periodicite'           => 'required',
+            'periodicite'           => 'required|string',
             'date_debut'            => 'required|date',
+            'date_fin'              => 'nullable|date',
             'delai_tolerance_jours' => 'nullable|integer|min:0',
             'montant_penalite'      => 'nullable|numeric|min:0',
-            'frais_gestion'         => 'nullable|numeric|min:0'
+            'frais_gestion'         => 'nullable|numeric|min:0',
+            'membres'               => 'nullable|array',
         ]);
 
-        $data['statut'] = 'brouillon';
-        $data['createur_id'] = Auth::id() ?? 1;
+        // Périodicité conforme à l'enum MySQL (mensuelle, trimestrielle, semestrielle, annuelle)
+        $periodicite = strtolower(trim($data['periodicite']));
+        $validPeriodicites = ['mensuelle', 'trimestrielle', 'semestrielle', 'annuelle'];
+        if (!in_array($periodicite, $validPeriodicites)) {
+            $periodicite = 'mensuelle';
+        }
 
-        $cycle = Cycle::create($data);
+        // Calcul automatique de la date de fin si non fournie
+        $membresIds = $request->input('membres', []);
+        $nbMembres = max(1, count($membresIds));
+        $dateDebut = Carbon::parse($data['date_debut']);
 
-        return redirect()->route('cycles.edit', $cycle->id)->with('success', 'Cycle créé avec succès');
+        if (empty($data['date_fin'])) {
+            // Un cycle dure le nombre de tours (1 mois pour mensuelle par défaut si 1 membre ou non spécifié)
+            if ($periodicite === 'mensuelle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres);
+            } elseif ($periodicite === 'trimestrielle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres * 3);
+            } elseif ($periodicite === 'semestrielle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres * 6);
+            } else {
+                $dateFin = $dateDebut->copy()->addYears($nbMembres);
+            }
+        } else {
+            $dateFin = Carbon::parse($data['date_fin']);
+        }
+
+        $userId = Auth::id() ?? 1;
+
+        $cycle = Cycle::create([
+            'libelle'               => $data['libelle'],
+            'montant_cotisation'    => $data['montant_cotisation'],
+            'periodicite'           => $periodicite,
+            'date_debut'            => $dateDebut->toDateString(),
+            'date_fin'              => $dateFin->toDateString(),
+            'delai_tolerance_jours' => $data['delai_tolerance_jours'] ?? 0,
+            'montant_penalite'      => $data['montant_penalite'] ?? 0,
+            'frais_gestion'         => $data['frais_gestion'] ?? 0,
+            'statut'                => 'brouillon',
+            'createur_id'           => $userId,
+        ]);
+
+        // Enregistrement des membres sélectionnés dans la table pivot cycle_member
+        if (!empty($membresIds)) {
+            foreach ($membresIds as $index => $memberId) {
+                CycleMembers::create([
+                    'cycle_id'  => $cycle->id,
+                    'member_id' => $memberId,
+                    'rang'      => $index + 1,
+                ]);
+            }
+        }
+
+        return redirect()->route('cycles.index')->with('success', 'Cycle créé avec succès.');
     }
 
     /**
@@ -166,7 +243,7 @@ class CycleController extends Controller
     {
         $cycle->load([
             'membres' => fn ($q) => $q->orderBy('cycle_member.rang'),
-            'tours' => fn ($q) => $q->orderBy('numero'),
+            'tours'   => fn ($q) => $q->orderBy('numero'),
             'tours.beneficiaire',
             'tours.cotisations.membre',
             'tours.cotisations.paiements',
@@ -195,6 +272,7 @@ class CycleController extends Controller
                     'montant_attendu' => $c->montant_attendu,
                     'montant_paye'    => $c->montant_paye,
                     'statut'          => $c->statut,
+                    'reste_du'        => $c->montant_attendu - $c->montant_paye,
                 ]),
             ];
         });
@@ -209,12 +287,14 @@ class CycleController extends Controller
                 'montant_cotisation' => $cycle->montant_cotisation,
                 'periodicite'        => $cycle->periodicite,
                 'date_debut'         => $cycle->date_debut,
+                'frais_gestion'      => $cycle->frais_gestion ?? 0,
             ],
             'membres'    => $membres,
             'tours'      => $tours,
             'tourOuvert' => $tourOuvert ? [
-                'id' => $tourOuvert->id,
-                'numero' => $tourOuvert->numero,
+                'id'           => $tourOuvert->id,
+                'numero'       => $tourOuvert->numero,
+                'beneficiaire' => $tourOuvert->beneficiaire ? $tourOuvert->beneficiaire->prenom . ' ' . $tourOuvert->beneficiaire->nom : null,
             ] : null,
         ]);
     }
@@ -224,6 +304,8 @@ class CycleController extends Controller
      */
     public function edit(Cycle $cycle)
     {
+        $this->checkGestionnaire();
+
         $cycle->load(['membres' => function ($q) {
             $q->orderBy('cycle_member.rang');
         }]);
@@ -254,55 +336,14 @@ class CycleController extends Controller
     }
 
     /**
-     * Ajouter des membres à un cycle
-     */
-    public function ajoutermembres(Request $request, Cycle $cycle)
-    {
-        $data = $request->validate([
-            'membres' => 'required|array|min:1'
-        ]);
-
-        $dernierRang = CycleMembers::where('cycle_id', $cycle->id)->max('rang') ?? 0;
-
-        foreach ($data['membres'] as $memberId) {
-            $exists = CycleMembers::where('cycle_id', $cycle->id)->where('member_id', $memberId)->exists();
-            if (!$exists) {
-                CycleMembers::create([
-                    'cycle_id'  => $cycle->id,
-                    'member_id' => $memberId,
-                    'rang'      => ++$dernierRang
-                ]);
-            }
-        }
-
-        return redirect()->back()->with('success', 'Membres ajoutés avec succès');
-    }
-
-    /**
-     * Modifier les rangs des membres du cycle
-     */
-    public function modifierrangs(Request $request, Cycle $cycle)
-    {
-        $data = $request->validate([
-            'ordre' => 'required|array|min:1'
-        ]);
-
-        foreach ($data['ordre'] as $position => $memberId) {
-            CycleMembers::where('cycle_id', $cycle->id)
-                ->where('member_id', $memberId)
-                ->update(['rang' => $position + 1]);
-        }
-
-        return redirect()->back()->with('success', 'Rangs modifiés avec succès');
-    }
-
-    /**
-     * Démarrer le cycle
+     * Démarrer le cycle et générer les tours et cotisations
      */
     public function demarrer(Cycle $cycle)
     {
+        $this->checkGestionnaire();
+
         if ($cycle->statut !== 'brouillon') {
-            return redirect()->back()->with('error', 'Le cycle est déjà démarré');
+            return redirect()->back()->with('error', 'Le cycle est déjà démarré.');
         }
 
         $participants = CycleMembers::where('cycle_id', $cycle->id)
@@ -310,15 +351,31 @@ class CycleController extends Controller
             ->get();
 
         if ($participants->count() == 0) {
-            return redirect()->back()->with('error', 'Aucun membre dans le cycle');
+            return redirect()->back()->with('error', 'Aucun membre dans le cycle.');
         }
 
+        $dateDebut = Carbon::parse($cycle->date_debut);
+
         foreach ($participants as $participant) {
+            // Calcul date prévue du tour selon périodicité
+            $offset = $participant->rang - 1;
+            if ($cycle->periodicite === 'trimestrielle') {
+                $datePrevue = $dateDebut->copy()->addMonths($offset * 3);
+            } elseif ($cycle->periodicite === 'semestrielle') {
+                $datePrevue = $dateDebut->copy()->addMonths($offset * 6);
+            } elseif ($cycle->periodicite === 'annuelle') {
+                $datePrevue = $dateDebut->copy()->addYears($offset);
+            } else {
+                $datePrevue = $dateDebut->copy()->addMonths($offset);
+            }
+
+            // Statut enum dans la table tours : 'en_attente', 'ouvert', 'ferme'
             $tour = Tours::create([
                 'cycle_id'        => $cycle->id,
                 'beneficiaire_id' => $participant->member_id,
                 'numero'          => $participant->rang,
-                'statut'          => $participant->rang == 1 ? 'ouvert' : 'a_venir'
+                'date_prevue'     => $datePrevue->toDateString(),
+                'statut'          => $participant->rang == 1 ? 'ouvert' : 'en_attente',
             ]);
 
             foreach ($participants as $cotisant) {
@@ -327,14 +384,39 @@ class CycleController extends Controller
                     'membre_id'       => $cotisant->member_id,
                     'montant_attendu' => $cycle->montant_cotisation,
                     'montant_paye'    => 0,
-                    'statut'          => 'en_attente'
+                    'statut'          => 'en_attente',
                 ]);
             }
         }
 
         $cycle->update(['statut' => 'actif']);
 
-        return redirect()->route('cycles.show', $cycle->id)->with('success', 'Cycle démarré et tours générés avec succès');
+        return redirect()->route('cycles.show', $cycle->id)->with('success', 'Cycle démarré et tours générés avec succès.');
+    }
+
+    /**
+     * Clôturer le tour courant et ouvrir le suivant
+     */
+    public function cloturerTour(Cycle $cycle, Tours $tour)
+    {
+        $this->checkGestionnaire();
+
+        // 1. Fermer le tour actuel
+        $tour->update(['statut' => 'ferme']);
+
+        // 2. Ouvrir le prochain tour
+        $prochainTour = Tours::where('cycle_id', $cycle->id)
+            ->where('numero', $tour->numero + 1)
+            ->first();
+
+        if ($prochainTour) {
+            $prochainTour->update(['statut' => 'ouvert']);
+            return redirect()->back()->with('success', "Le tour {$tour->numero} a été clôturé. Le tour {$prochainTour->numero} est maintenant ouvert.");
+        } else {
+            // S'il n'y a plus de tour suivant, le cycle est terminé
+            $cycle->update(['statut' => 'termine']);
+            return redirect()->back()->with('success', "Dernier tour clôturé. Le cycle est désormais terminé.");
+        }
     }
 
     /**
@@ -342,9 +424,11 @@ class CycleController extends Controller
      */
     public function cloturer(Cycle $cycle)
     {
+        $this->checkGestionnaire();
+
         $cycle->update(['statut' => 'termine']);
 
-        return redirect()->back()->with('success', 'Cycle clôturé');
+        return redirect()->back()->with('success', 'Cycle clôturé avec succès.');
     }
 
     /**
@@ -352,23 +436,58 @@ class CycleController extends Controller
      */
     public function destroy(Cycle $cycle)
     {
+        $this->checkGestionnaire();
+
         $cycle->delete();
 
-        return redirect()->route('cycles.index')->with('success', 'Cycle supprimé');
+        return redirect()->route('cycles.index')->with('success', 'Cycle supprimé.');
     }
 
     /**
-     * Mettre à jour les informations du cycle
+     * Mettre à jour un cycle existant
      */
     public function update(Request $request, Cycle $cycle)
     {
+        $this->checkGestionnaire();
+
         $data = $request->validate([
-            'libelle'    => 'required',
-            'date_debut' => 'required|date',
+            'libelle'               => 'required|string',
+            'montant_cotisation'    => 'required|numeric|min:1',
+            'periodicite'           => 'required|string',
+            'date_debut'            => 'required|date',
+            'delai_tolerance_jours' => 'nullable|integer|min:0',
+            'montant_penalite'      => 'nullable|numeric|min:0',
+            'frais_gestion'         => 'nullable|numeric|min:0',
+            'membres'               => 'nullable|array',
         ]);
 
-        $cycle->update($data);
+        $periodicite = strtolower(trim($data['periodicite']));
+        if (!in_array($periodicite, ['mensuelle', 'trimestrielle', 'semestrielle', 'annuelle'])) {
+            $periodicite = 'mensuelle';
+        }
 
-        return redirect()->back()->with('success', 'Cycle modifié avec succès');
+        $cycle->update([
+            'libelle'               => $data['libelle'],
+            'montant_cotisation'    => $data['montant_cotisation'],
+            'periodicite'           => $periodicite,
+            'date_debut'            => $data['date_debut'],
+            'delai_tolerance_jours' => $data['delai_tolerance_jours'] ?? 0,
+            'montant_penalite'      => $data['montant_penalite'] ?? 0,
+            'frais_gestion'         => $data['frais_gestion'] ?? 0,
+        ]);
+
+        // Mise à jour des membres du cycle si fourni
+        if ($request->has('membres')) {
+            CycleMembers::where('cycle_id', $cycle->id)->delete();
+            foreach ($request->input('membres') as $index => $memberId) {
+                CycleMembers::create([
+                    'cycle_id'  => $cycle->id,
+                    'member_id' => $memberId,
+                    'rang'      => $index + 1,
+                ]);
+            }
+        }
+
+        return redirect()->route('cycles.index')->with('success', 'Cycle modifié avec succès.');
     }
 }

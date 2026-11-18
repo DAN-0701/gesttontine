@@ -15,6 +15,7 @@ Route::put('/cycles/{cycle}/rangs', [CycleController::class, 'modifierrangs'])->
 Route::post('/cycles/{cycle}/demarrer', [CycleController::class, 'demarrer'])->name('cycles.demarrer');
 
 Route::post('/cycles/{cycle}/cloturer', [CycleController::class, 'cloturer'])->name('cycles.cloturer');
+Route::post('/cycles/{cycle}/tours/{tour}/cloturer', [CycleController::class, 'cloturerTour'])->name('cycles.tours.cloturer');
 
 Route::get('/cycles/{cycle}/tableau', [CycleController::class, 'show'])->name('cycles.tableau');
 
