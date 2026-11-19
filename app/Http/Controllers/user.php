@@ -41,8 +41,8 @@ class user extends Controller
         $data = $request->validate([
             'name'      => 'required|string',
             'email'     => 'required|email|unique:users,email',
-            'password'  => 'required|string|min:6',
-            'role'      => 'required|in:gestionnaire,tresorier',
+            'password'  => 'required|string|min:8',
+            'role'      => 'required|in:administrateur,gestionnaire,tresorier',
             'member_id' => 'nullable|integer',
         ]);
 
@@ -113,5 +113,48 @@ class user extends Controller
             'message'  => 'mot de passe modifié avec succès',
             'password' => $data['password']
         ]);
+    }
+    /**
+     * Modification du profil utilisateur connecté
+     * (Exécute updateall puis déconnecte l'utilisateur et le renvoie sur "/")
+     */
+    public function updateall(Request $request, Users $user)
+    {
+        // Seul l'utilisateur lui-même ou un administrateur peut modifier ses infos
+        $authUser = Auth::user();
+        if (!$authUser || ($authUser->id !== $user->id && $authUser->role !== 'administrateur')) {
+            abort(403, 'Action non autorisée.');
+        }
+
+        $data = $request->validate([
+            'name'      => 'required|string',
+            'email'     => 'required|email|unique:users,email,' . $user->id,
+            'password'  => 'nullable|string|min:8',
+        ]);
+
+        $updateData = [
+            'name'  => $data['name'],
+            'email' => $data['email'],
+        ];
+
+        if (!empty($data['password'])) {
+            $updateData['password'] = Hash::make($data['password']);
+        }
+
+        $user->update($updateData);
+
+        // Déconnexion automatique de l'utilisateur après modification de ses infos
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message'  => 'Profil mis à jour avec succès. Veuillez vous reconnecter.',
+                'redirect' => '/'
+            ]);
+        }
+
+        return redirect('/')->with('success', 'Profil mis à jour avec succès. Veuillez vous reconnecter.');
     }
 }

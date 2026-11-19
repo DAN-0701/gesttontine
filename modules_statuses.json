@@ -1,5 +1,6 @@
 {
     "Members": true,
     "Cycle": true,
-    "Cotisation": true
+    "Cotisation": true,
+    "Administration": true
 }

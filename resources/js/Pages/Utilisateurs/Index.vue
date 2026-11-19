@@ -33,12 +33,14 @@
                                         <span
                                             :class="[
                                                 'inline-block px-3 py-0.5 rounded-full text-xs font-semibold',
-                                                u.role === 'gestionnaire'
+                                                u.role === 'administrateur'
+                                                    ? 'bg-purple-100 text-purple-700'
+                                                    : u.role === 'gestionnaire'
                                                     ? 'bg-[#155A3E] text-white'
                                                     : 'bg-blue-100 text-blue-700'
                                             ]"
                                         >
-                                            {{ u.role === 'gestionnaire' ? 'Gestionnaire' : 'Trésorier' }}
+                                            {{ u.role === 'administrateur' ? 'Administrateur' : (u.role === 'gestionnaire' ? 'Gestionnaire' : 'Trésorier') }}
                                         </span>
                                     </td>
                                 </tr>
@@ -84,7 +86,8 @@
                             <input
                                 v-model="form.password"
                                 type="password"
-                                placeholder="•••••••• (min. 6 caractères)"
+                                placeholder="•••••••• (min. 8 caractères)"
+                                minlength="8"
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             />
                             <p v-if="form.errors.password" class="mt-1 text-xs text-red-600">{{ form.errors.password }}</p>
@@ -98,6 +101,7 @@
                             >
                                 <option value="tresorier">Trésorier</option>
                                 <option value="gestionnaire">Gestionnaire</option>
+                                <option value="administrateur">Administrateur</option>
                             </select>
                             <p v-if="form.errors.role" class="mt-1 text-xs text-red-600">{{ form.errors.role }}</p>
                         </div>

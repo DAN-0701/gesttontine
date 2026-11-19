@@ -23,7 +23,6 @@
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
                 <div class="flex items-center justify-between">
                     <h2 class="text-base font-bold text-gray-900">Paramètres du cycle</h2>
-                    <!-- Sélecteur de Devise (Demande 6) -->
                     <div class="flex items-center gap-2">
                         <label class="text-xs font-semibold text-gray-700">Devise :</label>
                         <select
@@ -78,21 +77,19 @@
                             type="date"
                             class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                         />
-                        <p v-if="form.errors.date_debut" class="text-xs text-red-600 mt-1">{{ form.errors.date_debut }}</p>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Date de fin</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Date de fin (facultative)</label>
                         <input
                             v-model="form.date_fin"
                             type="date"
                             class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                         />
-                        <p v-if="form.errors.date_fin" class="text-xs text-red-600 mt-1">{{ form.errors.date_fin }}</p>
                     </div>
                 </div>
 
                 <!-- Ligne 2 -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                     <div>
                         <label class="block text-xs font-semibold text-gray-800 mb-1.5">Tolérance (jours)</label>
                         <input
@@ -103,16 +100,16 @@
                         />
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Pénalité ({{ currencyLabel }})</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Pénalité par retard ({{ currencyLabel }})</label>
                         <input
                             v-model.number="form.montant_penalite"
                             type="number"
-                            placeholder="ex: 2000"
+                            placeholder="ex: 1000"
                             class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                         />
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Frais de gestion par tour ({{ currencyLabel }})</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Frais de gestion ({{ currencyLabel }})</label>
                         <input
                             v-model.number="form.frais_gestion"
                             type="number"
@@ -121,57 +118,48 @@
                         />
                     </div>
                 </div>
-
-                <!-- Info Box de calcul dynamique -->
-                <div class="bg-[#E8F0EC] text-[#155A3E] p-4 rounded-xl text-xs space-y-1">
-                    <p class="font-medium">
-                        {{ cycleMembers.length }} membre(s) donnent {{ cycleMembers.length }} tour(s) et {{ cycleMembers.length * cycleMembers.length }} cotisation(s).
-                    </p>
-                    <p>
-                        Cagnotte par tour : {{ cycleMembers.length }} &times; {{ formatMoney(form.montant_cotisation || 0) }} &minus; {{ formatMoney(form.frais_gestion || 0) }} = {{ formatMoney(calculatedPot) }} {{ currencyLabel }}.
-                    </p>
-                </div>
             </div>
 
-            <!-- Membres section (2 colonnes) -->
+            <!-- Sélection et Organisation des Membres -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                <!-- Colonne gauche: Membres disponibles dans la base de données -->
+                <!-- Colonne gauche: Membres disponibles -->
                 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
                     <div class="flex items-center justify-between">
-                        <h3 class="text-base font-bold text-gray-900">Tous les membres</h3>
-                        <span class="text-xs text-gray-500 font-medium">
-                            {{ availableCount }} disponible(s) sur {{ allMembers.length }}
-                        </span>
+                        <h3 class="text-base font-bold text-gray-900">Membres disponibles</h3>
+                        <span class="text-xs text-gray-500 font-medium">{{ filteredAvailableMembers.length }} disponible(s)</span>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Rechercher un membre</label>
-                        <input
-                            v-model="searchMember"
-                            type="text"
-                            placeholder="ex: Kouadio ou 0700"
-                            class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
-                        />
-                    </div>
+                    <!-- Recherche membre -->
+                    <input
+                        v-model="memberSearch"
+                        type="text"
+                        placeholder="Rechercher par nom ou numéro..."
+                        class="w-full px-3.5 py-2 rounded-lg border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
+                    />
 
-                    <button
-                        type="button"
-                        @click="addSelectedMembers"
-                        :disabled="selectedAvailableIds.length === 0"
-                        class="w-full py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
-                    >
-                        Ajouter les membres sélectionnés ({{ selectedAvailableIds.length }})
-                    </button>
-
-                    <div v-if="availableCount > 0" class="flex items-center gap-2 pt-2 border-b border-gray-100 pb-2">
-                        <input
-                            type="checkbox"
-                            id="selectAll"
-                            v-model="isAllSelected"
-                            @change="toggleSelectAll"
-                            class="rounded border-gray-300 text-[#1B6B4A] focus:ring-[#1B6B4A]"
-                        />
-                        <label for="selectAll" class="text-xs font-semibold text-gray-700">Tout sélectionner</label>
+                    <!-- Tout sélectionner & bouton ajouter -->
+                    <div class="flex items-center justify-between pt-1">
+                        <div class="flex items-center gap-2">
+                            <input
+                                id="selectAll"
+                                type="checkbox"
+                                v-model="isAllSelected"
+                                @change="toggleSelectAll"
+                                class="rounded border-gray-300 text-[#1B6B4A] focus:ring-[#1B6B4A]"
+                            />
+                            <label for="selectAll" class="text-xs font-semibold text-gray-700">Tout sélectionner</label>
+                        </div>
+                        <button
+                            type="button"
+                            @click="addSelectedMembers"
+                            :disabled="selectedAvailableIds.length === 0"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-xs font-semibold rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
+                        >
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span>Ajouter ({{ selectedAvailableIds.length }})</span>
+                        </button>
                     </div>
 
                     <!-- Liste scrollable des membres réels en base -->
@@ -214,12 +202,22 @@
                         </div>
                     </div>
 
-                    <p class="text-xs text-gray-400 pt-2">
-                        Seuls les membres actifs sont listés. Un membre désactivé n'apparaît jamais ici.
-                    </p>
-                    <Link href="/membres/create" class="inline-block text-xs font-semibold text-[#1B6B4A] hover:underline">
-                        Membre introuvable ? Créer un nouveau membre
-                    </Link>
+                    <div class="pt-2 border-t border-gray-100 flex items-center justify-between">
+                        <p class="text-xs text-gray-400">
+                            Seuls les membres actifs sont listés.
+                        </p>
+                        <!-- Bouton Modal Création Membre en direct (Demande 9: sans quitter ni reset le cycle) -->
+                        <button
+                            type="button"
+                            @click="showCreateMemberModal = true"
+                            class="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1B6B4A] hover:underline cursor-pointer"
+                        >
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                            </svg>
+                            <span>Créer un membre ici</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Colonne droite: Membres inclus dans le cycle -->
@@ -252,52 +250,187 @@
                                     type="button"
                                     @click="moveUp(index)"
                                     :disabled="index === 0"
-                                    class="w-7 h-7 flex items-center justify-center rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                                    class="p-1 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-20 cursor-pointer"
+                                    title="Monter le rang"
                                 >
-                                    &uarr;
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                    </svg>
                                 </button>
                                 <button
                                     type="button"
                                     @click="moveDown(index)"
                                     :disabled="index === cycleMembers.length - 1"
-                                    class="w-7 h-7 flex items-center justify-center rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                                    class="p-1 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded disabled:opacity-20 cursor-pointer"
+                                    title="Descendre le rang"
                                 >
-                                    &darr;
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
                                 </button>
+                                <!-- Retirer du cycle avec modal card (Demande 4) -->
                                 <button
                                     type="button"
-                                    @click="removeMember(cm.id)"
-                                    class="ml-1 px-3 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold"
+                                    @click="askRemoveMember(cm, index)"
+                                    class="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded ml-1 cursor-pointer"
+                                    title="Retirer du cycle"
                                 >
-                                    Retirer
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
                         </div>
 
-                        <div v-if="cycleMembers.length === 0" class="py-8 text-center text-gray-400 text-xs">
-                            Aucun membre sélectionné pour ce cycle. Cochez les membres à gauche et cliquez sur "Ajouter".
+                        <div v-if="cycleMembers.length === 0" class="py-10 text-center text-gray-400 text-xs border border-dashed border-gray-200 rounded-xl">
+                            Aucun membre dans le cycle pour l'instant. Cochez des membres à gauche et cliquez sur « Ajouter ».
                         </div>
+                    </div>
+
+                    <!-- Encart vert résumé -->
+                    <div v-if="cycleMembers.length > 0" class="bg-[#1B6B4A] text-white p-4 rounded-xl space-y-1 mt-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-emerald-100">Cagnotte par tour</p>
+                        <p class="text-xl font-bold">
+                            {{ formatMoney(totalCagnotte) }} {{ currencyLabel }}
+                        </p>
+                        <p class="text-xs text-emerald-100">
+                            {{ cycleMembers.length }} cotisations de {{ formatMoney(form.montant_cotisation || 0) }} {{ currencyLabel }}
+                            <template v-if="form.frais_gestion > 0">
+                                · moins {{ formatMoney(form.frais_gestion) }} {{ currencyLabel }} de frais
+                            </template>
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <!-- Boutons d'action -->
-            <div class="flex items-center gap-4 pt-4">
-                <button
-                    type="button"
-                    @click="saveDraft"
-                    :disabled="form.processing"
-                    class="px-5 py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50"
-                >
-                    Enregistrer le brouillon
-                </button>
+            <!-- Footer Buttons -->
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
                 <Link
                     href="/cycles"
-                    class="px-5 py-2.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-lg transition-colors"
+                    class="px-5 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-lg transition-colors"
                 >
                     Annuler
                 </Link>
+                <button
+                    type="button"
+                    @click="submit"
+                    :disabled="form.processing || cycleMembers.length === 0"
+                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{{ isEditing ? 'Enregistrer les modifications' : 'Enregistrer le cycle' }}</span>
+                </button>
             </div>
+
+            <!-- Modal Création Membre en direct (Demande 9) -->
+            <div
+                v-if="showCreateMemberModal"
+                class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
+                @click.self="showCreateMemberModal = false"
+            >
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
+                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <h3 class="text-base font-bold text-gray-900">Créer un nouveau membre</h3>
+                        <button
+                            @click="showCreateMemberModal = false"
+                            class="text-gray-400 hover:text-gray-600 font-bold p-1 text-sm cursor-pointer"
+                        >
+                            &times;
+                        </button>
+                    </div>
+
+                    <form @submit.prevent="submitCreateMember" class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-800 mb-1">Nom *</label>
+                                <input
+                                    v-model="newMemberForm.nom"
+                                    type="text"
+                                    required
+                                    placeholder="ex: Kouassi"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-800 mb-1">Prénom *</label>
+                                <input
+                                    v-model="newMemberForm.prenom"
+                                    type="text"
+                                    required
+                                    placeholder="ex: Jean"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-800 mb-1">Téléphone *</label>
+                                <input
+                                    v-model="newMemberForm.telephone"
+                                    type="text"
+                                    required
+                                    placeholder="ex: 0700000000"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-800 mb-1">Email</label>
+                                <input
+                                    v-model="newMemberForm.email"
+                                    type="email"
+                                    placeholder="ex: jean@mail.ci"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1">Adresse *</label>
+                            <input
+                                v-model="newMemberForm.adresse"
+                                type="text"
+                                required
+                                placeholder="ex: Abidjan, Cocody"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                            />
+                        </div>
+
+                        <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                            <button
+                                type="button"
+                                @click="showCreateMemberModal = false"
+                                class="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                type="submit"
+                                :disabled="newMemberLoading"
+                                class="px-4 py-2 text-xs font-semibold text-white bg-[#1B6B4A] hover:bg-[#155A3E] rounded-lg disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                                <span>{{ newMemberLoading ? 'Enregistrement...' : 'Enregistrer le membre' }}</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Confirmation Modal Card (Demande 4) -->
+            <ConfirmModal
+                :show="confirmData.show"
+                :title="confirmData.title"
+                :message="confirmData.message"
+                :confirmText="confirmData.confirmText"
+                :isDanger="confirmData.isDanger"
+                @confirm="handleConfirmAction"
+                @cancel="confirmData.show = false"
+            />
         </div>
     </AppLayout>
 </template>
@@ -306,14 +439,15 @@
 import { ref, computed } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 
 const props = defineProps({
     cycle: Object,
-    membresDuCycle: {
+    membresDisponibles: {
         type: Array,
         default: () => []
     },
-    membresDisponibles: {
+    membresDuCycle: {
         type: Array,
         default: () => []
     },
@@ -321,7 +455,7 @@ const props = defineProps({
 
 const isEditing = computed(() => !!props.cycle?.id)
 
-// Gestion de la devise (Demande 6)
+// Devise
 const currency = ref('FCFA')
 const currencyLabel = computed(() => {
     if (currency.value === 'EUR') return '€'
@@ -329,52 +463,44 @@ const currencyLabel = computed(() => {
     return 'FCFA'
 })
 
-// Formulaire : champs vides avec placeholders au lieu de valeurs par défaut codées en dur
+// Formulaire Cycle
 const form = useForm({
     libelle: props.cycle?.libelle || '',
     montant_cotisation: props.cycle?.montant_cotisation || null,
     periodicite: props.cycle?.periodicite || 'mensuelle',
     date_debut: props.cycle?.date_debut || '',
     date_fin: props.cycle?.date_fin || '',
-    delai_tolerance_jours: props.cycle?.delai_tolerance_jours ?? null,
-    montant_penalite: props.cycle?.montant_penalite ?? null,
-    frais_gestion: props.cycle?.frais_gestion ?? null,
+    delai_tolerance_jours: props.cycle?.delai_tolerance_jours ?? 2,
+    montant_penalite: props.cycle?.montant_penalite ?? 1000,
+    frais_gestion: props.cycle?.frais_gestion ?? 0,
     membres: [],
 })
 
-// Uniquement les membres réels en base de données
-const allMembers = ref(props.membresDisponibles || [])
-const cycleMembers = ref(props.membresDuCycle ? [...props.membresDuCycle] : [])
+// Liste locale des membres disponibles
+const availableMembersList = ref([...props.membresDisponibles])
 
-const searchMember = ref('')
+// Membres sélectionnés pour le cycle
+const cycleMembers = ref([...props.membresDuCycle])
 const selectedAvailableIds = ref([])
+const memberSearch = ref('')
 const isAllSelected = ref(false)
 
-const isAlreadyInCycle = (id) => {
-    return cycleMembers.value.some(cm => cm.id === id)
-}
-
 const filteredAvailableMembers = computed(() => {
-    let list = allMembers.value
-    if (searchMember.value) {
-        const q = searchMember.value.toLowerCase()
-        list = list.filter(m => m.nom.toLowerCase().includes(q) || (m.telephone && m.telephone.includes(q)))
-    }
-    return list
+    if (!memberSearch.value) return availableMembersList.value
+    const q = memberSearch.value.toLowerCase()
+    return availableMembersList.value.filter(m =>
+        (m.nom && m.nom.toLowerCase().includes(q)) ||
+        (m.telephone && m.telephone.toLowerCase().includes(q))
+    )
 })
 
-const availableCount = computed(() => {
-    return allMembers.value.filter(m => !isAlreadyInCycle(m.id)).length
-})
-
-const calculatedPot = computed(() => {
-    const total = cycleMembers.value.length * (form.montant_cotisation || 0)
-    return Math.max(0, total - (form.frais_gestion || 0))
-})
+function isAlreadyInCycle(id) {
+    return cycleMembers.value.some(m => m.id === id)
+}
 
 function toggleSelectAll() {
     if (isAllSelected.value) {
-        selectedAvailableIds.value = allMembers.value
+        selectedAvailableIds.value = filteredAvailableMembers.value
             .filter(m => !isAlreadyInCycle(m.id))
             .map(m => m.id)
     } else {
@@ -384,48 +510,124 @@ function toggleSelectAll() {
 
 function addSelectedMembers() {
     selectedAvailableIds.value.forEach(id => {
-        const found = allMembers.value.find(m => m.id === id)
+        const found = availableMembersList.value.find(m => m.id === id)
         if (found && !isAlreadyInCycle(id)) {
-            cycleMembers.value.push({
-                id: found.id,
-                nom: found.nom,
-                telephone: found.telephone,
-                rang: cycleMembers.value.length + 1
-            })
+            cycleMembers.value.push({ ...found })
         }
     })
     selectedAvailableIds.value = []
     isAllSelected.value = false
 }
 
-function removeMember(id) {
-    cycleMembers.value = cycleMembers.value.filter(m => m.id !== id)
+// Confirmation Card pour retirer un membre (Demande 4)
+const confirmData = ref({
+    show: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirmer',
+    isDanger: false,
+    action: null,
+})
+
+function askRemoveMember(member, index) {
+    confirmData.value = {
+        show: true,
+        title: 'Retirer le membre du cycle',
+        message: `Voulez-vous vraiment retirer ${member.nom} de ce cycle ?`,
+        confirmText: 'Retirer',
+        isDanger: true,
+        action: () => {
+            cycleMembers.value.splice(index, 1)
+        }
+    }
+}
+
+function handleConfirmAction() {
+    if (confirmData.value.action) {
+        confirmData.value.action()
+    }
+    confirmData.value.show = false
 }
 
 function moveUp(index) {
-    if (index > 0) {
-        const temp = cycleMembers.value[index]
-        cycleMembers.value[index] = cycleMembers.value[index - 1]
-        cycleMembers.value[index - 1] = temp
-    }
+    if (index <= 0) return
+    const temp = cycleMembers.value[index]
+    cycleMembers.value[index] = cycleMembers.value[index - 1]
+    cycleMembers.value[index - 1] = temp
 }
 
 function moveDown(index) {
-    if (index < cycleMembers.value.length - 1) {
-        const temp = cycleMembers.value[index]
-        cycleMembers.value[index] = cycleMembers.value[index + 1]
-        cycleMembers.value[index + 1] = temp
-    }
+    if (index >= cycleMembers.value.length - 1) return
+    const temp = cycleMembers.value[index]
+    cycleMembers.value[index] = cycleMembers.value[index + 1]
+    cycleMembers.value[index + 1] = temp
 }
 
-function saveDraft() {
-    // Transmettre la liste ordonnée des IDs des membres sélectionnés
-    form.membres = cycleMembers.value.map(cm => cm.id)
+const totalCagnotte = computed(() => {
+    const total = (cycleMembers.value.length * (form.montant_cotisation || 0)) - (form.frais_gestion || 0)
+    return Math.max(0, total)
+})
 
+function submit() {
+    form.membres = cycleMembers.value.map(m => m.id)
     if (isEditing.value) {
         form.put(`/cycles/${props.cycle.id}`)
     } else {
         form.post('/cycles')
+    }
+}
+
+// Modal Création Membre en direct (Demande 9)
+const showCreateMemberModal = ref(false)
+const newMemberLoading = ref(false)
+const newMemberForm = ref({
+    nom: '',
+    prenom: '',
+    telephone: '',
+    email: '',
+    adresse: '',
+    date_adhesion: new Date().toISOString().split('T')[0],
+    statut: 'actif',
+})
+
+async function submitCreateMember() {
+    newMemberLoading.value = true
+    try {
+        const res = await fetch('/members', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify(newMemberForm.value),
+        })
+
+        const data = await res.json()
+        if (data && data.member) {
+            const newMember = {
+                id: data.member.id,
+                nom: `${data.member.prenom} ${data.member.nom}`,
+                telephone: data.member.telephone,
+                dans_cycle: false,
+            }
+            availableMembersList.value.unshift(newMember)
+            cycleMembers.value.push(newMember)
+            showCreateMemberModal.value = false
+            newMemberForm.value = {
+                nom: '',
+                prenom: '',
+                telephone: '',
+                email: '',
+                adresse: '',
+                date_adhesion: new Date().toISOString().split('T')[0],
+                statut: 'actif',
+            }
+        }
+    } catch (e) {
+        alert("Erreur lors de la création du membre.")
+    } finally {
+        newMemberLoading.value = false
     }
 }
 

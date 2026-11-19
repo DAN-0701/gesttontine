@@ -22,7 +22,9 @@ class CycleServiceProvider extends ModuleServiceProvider
      *
      * @var string[]
      */
-    // protected array $commands = [];
+    protected array $commands = [
+        \Modules\Cycle\Console\Commands\UpdateCyclesCommand::class,
+    ];
 
     /**
      * Provider classes to register.

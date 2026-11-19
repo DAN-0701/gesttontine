@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\user;
-use App\Models\administrateur;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -18,6 +17,7 @@ Route::get('/', function () {
 Route::post('/login', [user::class, 'login']);
 Route::post('/logout', [user::class, 'logout'])->name('logout');
 Route::post('/update', [user::class, 'update'])->name('password.update');
+Route::post('/users/{user}/updateall', [user::class, 'updateall'])->name('users.updateall');
 
 Route::get('/utilisateurs', [user::class, 'index'])->name('utilisateurs.index');
 Route::post('/utilisateurs', [user::class, 'store'])->name('utilisateurs.store');

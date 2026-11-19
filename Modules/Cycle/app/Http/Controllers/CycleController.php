@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use Modules\Administration\Models\Notification;
 use Modules\Cotisation\Models\Cotisation;
 use Modules\Cycle\Models\Cycle;
 use Modules\Cycle\Models\CycleMembers;
@@ -16,26 +17,53 @@ use Modules\Members\Models\members;
 class CycleController extends Controller
 {
     /**
-     * Vérifier si l'utilisateur connecté est gestionnaire
+     * Vérifier les permissions de l'utilisateur
      */
-    private function checkGestionnaire()
+    private function checkPermission(string $permission)
     {
         $user = Auth::user();
+        if ($user && method_exists($user, 'hasPermission')) {
+            if (!$user->hasPermission($permission)) {
+                abort(403, "Action non autorisée : permission '{$permission}' requise.");
+            }
+            return;
+        }
+
+        // Fallback rôle si hasPermission n'est pas encore chargé
         if ($user && $user->role === 'tresorier') {
             abort(403, 'Action non autorisée pour le trésorier.');
         }
     }
 
+    private function checkGestionnaire()
+    {
+        $this->checkPermission('creer_cycle');
+    }
+
     /**
      * Tableau de bord principal (Image 02)
      */
-    public function dashboard()
+    public function dashboard(Request $request)
     {
-        // Chercher d'abord un cycle actif, sinon le dernier cycle créé (même en brouillon)
-        $cycle = Cycle::where('statut', 'actif')
-            ->with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
-            ->latest('id')
-            ->first();
+        // Récupérer tous les cycles disponibles pour le sélecteur
+        $allCycles = Cycle::select('id', 'libelle', 'statut')->orderBy('id', 'desc')->get();
+
+        // Si l'utilisateur a choisi un cycle spécifique via le paramètre GET ?cycle_id=...
+        $selectedCycleId = $request->input('cycle_id');
+
+        $cycle = null;
+        if ($selectedCycleId) {
+            $cycle = Cycle::with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
+                ->find($selectedCycleId);
+        }
+
+        // Sinon, chercher d'abord un cycle actif, puis à défaut le dernier créé
+        if (!$cycle) {
+            $cycle = Cycle::where('statut', 'actif')
+                ->with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
+                ->latest('id')
+                ->first();
+        }
 
         if (!$cycle) {
             $cycle = Cycle::with(['membres', 'tours.beneficiaire', 'tours.cotisations.membre', 'tours.cotisations.penalite'])
@@ -44,7 +72,9 @@ class CycleController extends Controller
         }
 
         $data = [
-            'cycle' => null,
+            'cycle'           => null,
+            'availableCycles' => $allCycles,
+            'selectedCycleId' => $cycle ? $cycle->id : null,
         ];
 
         if ($cycle) {
@@ -60,12 +90,29 @@ class CycleController extends Controller
             $montantRetard = 0;
             $retards = [];
 
+            // Calcul de la date limite avec délai de tolérance (Demande 6)
+            $dateToleranceLimite = null;
+            $isRetardApplicable = false;
+
+            if ($tourOuvert && $tourOuvert->date_prevue) {
+                $toleranceJours = $cycle->delai_tolerance_jours ?? 0;
+                $dateToleranceLimite = Carbon::parse($tourOuvert->date_prevue)->addDays($toleranceJours);
+                // Si la date du jour est strictement supérieure à date_prevue + tolérance
+                $isRetardApplicable = Carbon::today()->greaterThan($dateToleranceLimite);
+            }
+
             if ($tourOuvert && $tourOuvert->cotisations) {
                 foreach ($tourOuvert->cotisations as $cotisation) {
                     $encaisse += $cotisation->montant_paye;
-                    if ($cotisation->statut === 'en_retard' || ($cotisation->montant_paye < $cotisation->montant_attendu && !in_array($cotisation->statut, ['paye', 'payee']))) {
+
+                    $reste = max(0, $cotisation->montant_attendu - $cotisation->montant_paye);
+
+                    // Si pas totalement payé ET que le délai de tolérance est dépassé => en retard
+                    $estEnRetard = ($cotisation->statut === 'en_retard') ||
+                        ($reste > 0 && !in_array($cotisation->statut, ['paye', 'payee']) && $isRetardApplicable);
+
+                    if ($estEnRetard) {
                         $cotisationsEnRetard++;
-                        $reste = $cotisation->montant_attendu - $cotisation->montant_paye;
                         $montantRetard += $reste;
                         $membre = $cotisation->membre;
                         $penalite = $cotisation->penalite;
@@ -73,7 +120,7 @@ class CycleController extends Controller
                             'membre'    => $membre ? $membre->prenom . ' ' . $membre->nom : '',
                             'telephone' => $membre ? $membre->telephone : '',
                             'reste_du'  => $reste,
-                            'penalite'  => $penalite ? $penalite->montant : 0,
+                            'penalite'  => $penalite ? $penalite->montant : ($cycle->montant_penalite ?? 0),
                         ];
                     }
                 }
@@ -90,6 +137,8 @@ class CycleController extends Controller
                 'tour_actuel'          => $tourOuvert ? $tourOuvert->numero : 1,
                 'total_tours'          => $cycle->tours->count() > 0 ? $cycle->tours->count() : $totalMembres,
                 'date_echeance'        => $tourOuvert ? $tourOuvert->date_prevue : null,
+                'delai_tolerance'      => $cycle->delai_tolerance_jours ?? 0,
+                'date_tolerance_limite'=> $dateToleranceLimite ? $dateToleranceLimite->toDateString() : null,
                 'encaisse'             => $encaisse,
                 'total_attendu'        => $totalAttendu,
                 'membres_payes'        => $membresPayes,
@@ -256,24 +305,49 @@ class CycleController extends Controller
             'rang' => $m->pivot->rang,
         ]);
 
-        $tours = $cycle->tours->map(function ($tour) {
+        $tours = $cycle->tours->map(function ($tour) use ($cycle) {
+            $toleranceJours = $cycle->delai_tolerance_jours ?? 0;
+            $isRetardApplicable = false;
+            if ($tour->date_prevue) {
+                $limite = Carbon::parse($tour->date_prevue)->addDays($toleranceJours);
+                $isRetardApplicable = Carbon::today()->greaterThan($limite);
+            }
+
             return [
                 'id'            => $tour->id,
                 'numero'        => $tour->numero,
                 'date_prevue'   => $tour->date_prevue,
                 'statut'        => $tour->statut,
+                'is_retard_applicable' => $isRetardApplicable,
                 'beneficiaire'  => $tour->beneficiaire ? [
                     'id'  => $tour->beneficiaire->id,
                     'nom' => $tour->beneficiaire->prenom . ' ' . $tour->beneficiaire->nom,
                 ] : null,
-                'cotisations'   => $tour->cotisations->map(fn ($c) => [
-                    'id'              => $c->id,
-                    'membre_id'       => $c->membre_id,
-                    'montant_attendu' => $c->montant_attendu,
-                    'montant_paye'    => $c->montant_paye,
-                    'statut'          => $c->statut,
-                    'reste_du'        => $c->montant_attendu - $c->montant_paye,
-                ]),
+                'cotisations'   => $tour->cotisations->map(function ($c) use ($isRetardApplicable) {
+                    $reste = max(0, $c->montant_attendu - $c->montant_paye);
+                    return [
+                        'id'              => $c->id,
+                        'membre_id'       => $c->membre_id,
+                        'montant_attendu' => $c->montant_attendu,
+                        'montant_paye'    => $c->montant_paye,
+                        'statut'          => $c->statut,
+                        'reste_du'        => $reste,
+                        'paiements'       => $c->paiements->map(fn($p) => [
+                            'id'                => $p->id,
+                            'montant'           => $p->montant,
+                            'date_paiement'     => $p->date_paiement,
+                            'mode'              => $p->mode,
+                            'annule'            => (bool) $p->annule,
+                            'motif_annulation'  => $p->motif_annulation,
+                        ]),
+                        'penalite'        => $c->penalite ? [
+                            'id'                => $c->penalite->id,
+                            'montant'           => $c->penalite->montant,
+                            'statut'            => $c->penalite->statut,
+                            'motif_annulation'  => $c->penalite->motif_annulation,
+                        ] : null,
+                    ];
+                }),
             ];
         });
 
@@ -340,7 +414,7 @@ class CycleController extends Controller
      */
     public function demarrer(Cycle $cycle)
     {
-        $this->checkGestionnaire();
+        $this->checkPermission('demarrer_cycle');
 
         if ($cycle->statut !== 'brouillon') {
             return redirect()->back()->with('error', 'Le cycle est déjà démarré.');
@@ -391,6 +465,15 @@ class CycleController extends Controller
 
         $cycle->update(['statut' => 'actif']);
 
+        // Notification : cycle démarré
+        Notification::create([
+            'type'     => 'cycle_demarre',
+            'titre'    => "Cycle démarré : {$cycle->libelle}",
+            'message'  => "Le cycle « {$cycle->libelle} » vient d'être démarré. {$participants->count()} tour(s) ont été générés.",
+            'cycle_id' => $cycle->id,
+            'lue'      => false,
+        ]);
+
         return redirect()->route('cycles.show', $cycle->id)->with('success', 'Cycle démarré et tours générés avec succès.');
     }
 
@@ -399,7 +482,7 @@ class CycleController extends Controller
      */
     public function cloturerTour(Cycle $cycle, Tours $tour)
     {
-        $this->checkGestionnaire();
+        $this->checkPermission('cloturer_tour');
 
         // 1. Fermer le tour actuel
         $tour->update(['statut' => 'ferme']);
@@ -411,10 +494,26 @@ class CycleController extends Controller
 
         if ($prochainTour) {
             $prochainTour->update(['statut' => 'ouvert']);
+            // Notification : nouveau tour ouvert
+            Notification::create([
+                'type'     => 'tour_ouvert',
+                'titre'    => "Tour {$prochainTour->numero} ouvert — {$cycle->libelle}",
+                'message'  => "Le tour {$tour->numero} du cycle « {$cycle->libelle} » a été clôturé. Le tour {$prochainTour->numero} est maintenant ouvert.",
+                'cycle_id' => $cycle->id,
+                'tour_id'  => $prochainTour->id,
+                'lue'      => false,
+            ]);
             return redirect()->back()->with('success', "Le tour {$tour->numero} a été clôturé. Le tour {$prochainTour->numero} est maintenant ouvert.");
         } else {
             // S'il n'y a plus de tour suivant, le cycle est terminé
             $cycle->update(['statut' => 'termine']);
+            Notification::create([
+                'type'     => 'cycle_termine',
+                'titre'    => "Cycle terminé : {$cycle->libelle}",
+                'message'  => "Le dernier tour du cycle « {$cycle->libelle} » a été clôturé. Le cycle est maintenant terminé.",
+                'cycle_id' => $cycle->id,
+                'lue'      => false,
+            ]);
             return redirect()->back()->with('success', "Dernier tour clôturé. Le cycle est désormais terminé.");
         }
     }
@@ -424,7 +523,7 @@ class CycleController extends Controller
      */
     public function cloturer(Cycle $cycle)
     {
-        $this->checkGestionnaire();
+        $this->checkPermission('cloturer_cycle');
 
         $cycle->update(['statut' => 'termine']);
 
@@ -489,5 +588,238 @@ class CycleController extends Controller
         }
 
         return redirect()->route('cycles.index')->with('success', 'Cycle modifié avec succès.');
+    }
+
+    /**
+     * Ajouter des membres à un cycle
+     */
+    public function ajoutermembres(Request $request, Cycle $cycle)
+    {
+        $this->checkPermission('creer_cycle');
+
+        $data = $request->validate([
+            'member_id' => 'nullable|exists:members,id',
+            'membres'   => 'nullable|array',
+        ]);
+
+        $memberIds = $request->input('membres', []);
+        if ($request->filled('member_id')) {
+            $memberIds[] = $request->input('member_id');
+        }
+
+        $currentMaxRang = CycleMembers::where('cycle_id', $cycle->id)->max('rang') ?? 0;
+
+        foreach (array_unique($memberIds) as $mid) {
+            $exists = CycleMembers::where('cycle_id', $cycle->id)->where('member_id', $mid)->exists();
+            if (!$exists) {
+                $currentMaxRang++;
+                CycleMembers::create([
+                    'cycle_id'  => $cycle->id,
+                    'member_id' => $mid,
+                    'rang'      => $currentMaxRang,
+                ]);
+            }
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Membres ajoutés avec succès']);
+        }
+
+        return redirect()->back()->with('success', 'Membres ajoutés au cycle avec succès.');
+    }
+
+    /**
+     * Modifier l'ordre des rangs des membres du cycle
+     */
+    public function modifierrangs(Request $request, Cycle $cycle)
+    {
+        $this->checkPermission('creer_cycle');
+
+        $data = $request->validate([
+            'rangs' => 'required|array',
+        ]);
+
+        foreach ($data['rangs'] as $item) {
+            if (isset($item['member_id']) && isset($item['rang'])) {
+                CycleMembers::where('cycle_id', $cycle->id)
+                    ->where('member_id', $item['member_id'])
+                    ->update(['rang' => $item['rang']]);
+            }
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json(['message' => 'Rangs mis à jour avec succès']);
+        }
+
+        return redirect()->back()->with('success', 'Rangs mis à jour avec succès.');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Traitements automatiques pour la commande cycles:update (Demande 13)
+    |--------------------------------------------------------------------------
+    | Aucune couche Service/Repository : toute la logique réside dans le contrôleur.
+    */
+
+    /**
+     * 1. Démarrage automatique des cycles dont la date_debut est atteinte ou dépassée
+     */
+    public function traiterDemarrageAutomatique(): int
+    {
+        $today = Carbon::today()->toDateString();
+
+        // Récupérer les cycles en attente ou brouillon dont date_debut <= aujourd'hui
+        $cyclesADemarrer = Cycle::whereIn('statut', ['en_attente', 'brouillon'])
+            ->where('date_debut', '<=', $today)
+            ->get();
+
+        $count = 0;
+
+        foreach ($cyclesADemarrer as $cycle) {
+            $participants = CycleMembers::where('cycle_id', $cycle->id)->orderBy('rang')->get();
+            if ($participants->count() == 0) {
+                continue;
+            }
+
+            // Générer les tours si non encore générés
+            if ($cycle->tours()->count() == 0) {
+                $dateDebut = Carbon::parse($cycle->date_debut);
+
+                foreach ($participants as $participant) {
+                    $offset = $participant->rang - 1;
+                    if ($cycle->periodicite === 'trimestrielle') {
+                        $datePrevue = $dateDebut->copy()->addMonths($offset * 3);
+                    } elseif ($cycle->periodicite === 'semestrielle') {
+                        $datePrevue = $dateDebut->copy()->addMonths($offset * 6);
+                    } elseif ($cycle->periodicite === 'annuelle') {
+                        $datePrevue = $dateDebut->copy()->addYears($offset);
+                    } else {
+                        $datePrevue = $dateDebut->copy()->addMonths($offset);
+                    }
+
+                    $tour = Tours::create([
+                        'cycle_id'        => $cycle->id,
+                        'beneficiaire_id' => $participant->member_id,
+                        'numero'          => $participant->rang,
+                        'date_prevue'     => $datePrevue->toDateString(),
+                        'statut'          => $participant->rang == 1 ? 'ouvert' : 'en_attente',
+                    ]);
+
+                    foreach ($participants as $cotisant) {
+                        Cotisation::create([
+                            'tour_id'         => $tour->id,
+                            'membre_id'       => $cotisant->member_id,
+                            'montant_attendu' => $cycle->montant_cotisation,
+                            'montant_paye'    => 0,
+                            'statut'          => 'en_attente',
+                        ]);
+                    }
+                }
+            } else {
+                // Si des tours existent déjà, ouvrir le premier tour
+                $premierTour = $cycle->tours()->where('numero', 1)->first();
+                if ($premierTour && $premierTour->statut === 'en_attente') {
+                    $premierTour->update(['statut' => 'ouvert']);
+                }
+            }
+
+            // Statut actif
+            $cycle->update(['statut' => 'actif']);
+            // Notification automatique
+            Notification::create([
+                'type'     => 'cycle_demarre',
+                'titre'    => "Cycle démarré automatiquement : {$cycle->libelle}",
+                'message'  => "Le cycle « {$cycle->libelle} » a été démarré automatiquement car sa date de début ({$cycle->date_debut}) est atteinte.",
+                'cycle_id' => $cycle->id,
+                'lue'      => false,
+            ]);
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
+     * 2. Gestion automatique des tours
+     * Un seul tour ouvert à la fois. Lorsque la date_prevue (date de fin du tour) est atteinte,
+     * le tour passe à 'ferme' et le tour suivant est automatiquement ouvert.
+     */
+    public function traiterAvancementToursAutomatique(): int
+    {
+        $today = Carbon::today()->toDateString();
+
+        // Récupérer les tours 'ouvert' dont la date_prevue est atteinte ou dépassée
+        $toursEchus = Tours::where('statut', 'ouvert')
+            ->whereNotNull('date_prevue')
+            ->where('date_prevue', '<=', $today)
+            ->with('cycle')
+            ->get();
+
+        $count = 0;
+
+        foreach ($toursEchus as $tour) {
+            // Clôturer le tour courant
+            $tour->update(['statut' => 'ferme']);
+
+            // Vérifier s'il existe un tour suivant
+            $prochainTour = Tours::where('cycle_id', $tour->cycle_id)
+                ->where('numero', $tour->numero + 1)
+                ->first();
+
+            if ($prochainTour) {
+                // S'assurer qu'aucun autre tour n'est ouvert et ouvrir le suivant
+                $prochainTour->update(['statut' => 'ouvert']);
+                $cycleNom = $tour->cycle ? $tour->cycle->libelle : 'inconnu';
+                Notification::create([
+                    'type'     => 'tour_ouvert',
+                    'titre'    => "Tour {$prochainTour->numero} ouvert automatiquement",
+                    'message'  => "Le tour {$tour->numero} du cycle « {$cycleNom} » a été clôturé automatiquement. Le tour {$prochainTour->numero} est maintenant ouvert.",
+                    'cycle_id' => $tour->cycle_id,
+                    'tour_id'  => $prochainTour->id,
+                    'lue'      => false,
+                ]);
+            } else {
+                // Aucun tour suivant, clôture du cycle
+                if ($tour->cycle) {
+                    $tour->cycle->update(['statut' => 'termine']);
+                    Notification::create([
+                        'type'     => 'cycle_termine',
+                        'titre'    => "Cycle terminé automatiquement : {$tour->cycle->libelle}",
+                        'message'  => "Tous les tours du cycle « {$tour->cycle->libelle} » ont été complétés. Le cycle est maintenant terminé.",
+                        'cycle_id' => $tour->cycle_id,
+                        'lue'      => false,
+                    ]);
+                }
+            }
+
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
+     * 3. Clôture automatique du cycle
+     * Si tous les tours sont clôturés ou si la date_fin du cycle est atteinte.
+     */
+    public function traiterClotureCyclesAutomatique(): int
+    {
+        $today = Carbon::today()->toDateString();
+        $cyclesActifs = Cycle::where('statut', 'actif')->with('tours')->get();
+        $count = 0;
+
+        foreach ($cyclesActifs as $cycle) {
+            $tousToursClotures = ($cycle->tours->count() > 0) &&
+                $cycle->tours->every(fn($t) => in_array($t->statut, ['ferme', 'cloture']));
+
+            $dateFinAtteinte = $cycle->date_fin && ($cycle->date_fin <= $today);
+
+            if ($tousToursClotures || $dateFinAtteinte) {
+                $cycle->update(['statut' => 'termine']);
+                $count++;
+            }
+        }
+
+        return $count;
     }
 }

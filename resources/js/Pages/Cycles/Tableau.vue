@@ -1,25 +1,43 @@
 <template>
     <AppLayout>
         <div class="max-w-7xl mx-auto space-y-6">
-            <!-- Header -->
+            <!-- Header avec actions et boutons + icônes -->
             <div>
                 <Link href="/cycles" class="text-sm font-semibold text-[#1B6B4A] hover:underline inline-flex items-center gap-1 mb-2">
-                    &larr; Retour aux cycles
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                    <span>Retour aux cycles</span>
                 </Link>
-                <div class="flex items-center gap-3">
-                    <h1 class="text-2xl font-bold text-gray-900">{{ cycle?.libelle }}</h1>
-                    <span
-                        :class="[
-                            'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
-                            cycle?.statut === 'actif'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : cycle?.statut === 'brouillon'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-gray-100 text-gray-600'
-                        ]"
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <h1 class="text-2xl font-bold text-gray-900">{{ cycle?.libelle }}</h1>
+                        <span
+                            :class="[
+                                'inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold',
+                                cycle?.statut === 'actif'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : cycle?.statut === 'brouillon'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-gray-100 text-gray-600'
+                            ]"
+                        >
+                            {{ cycle?.statut === 'actif' ? 'En cours' : cycle?.statut }}
+                        </span>
+                    </div>
+
+                    <!-- Action Clôturer le tour courant -->
+                    <button
+                        v-if="canClotureTour && tourOuvert"
+                        type="button"
+                        @click="askCloturerTour"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
                     >
-                        {{ cycle?.statut === 'actif' ? 'En cours' : cycle?.statut }}
-                    </span>
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Clôturer le tour {{ tourOuvert.numero }}</span>
+                    </button>
                 </div>
                 <p class="text-sm text-gray-500 mt-1">
                     {{ membres.length }} membre(s) · {{ formatMoney(cycle?.montant_cotisation) }} FCFA par {{ cycle?.periodicite || 'mois' }}
@@ -79,7 +97,7 @@
                                             v-if="getCotisationReste(m, t) > 0 && t.statut === 'ouvert'"
                                             class="text-[10px] font-normal opacity-90 mt-0.5"
                                         >
-                                            {{ formatMoney(getCotisationReste(m, t)) }} dû
+                                            {{ formatMoney(getCotisationReste(m, t)) }}
                                         </span>
                                     </div>
                                 </td>
@@ -87,138 +105,210 @@
                         </tbody>
                     </table>
                 </div>
-
-                <div v-else class="py-12 text-center text-gray-400 text-sm">
-                    Ce cycle n'a pas encore de tours générés. Veuillez démarrer le cycle pour voir le tableau matriciel.
-                </div>
-
-                <p v-if="tours.length > 0" class="text-xs text-gray-400 mt-2">
-                    Cliquer une case ouvre la fenêtre d'enregistrement de paiement.
-                </p>
             </div>
 
-            <!-- Bottom Section: Actions du tour & Légende -->
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                <!-- Colonne Gauche: Tour en cours & actions -->
-                <div class="md:col-span-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-                    <h3 class="text-base font-bold text-gray-900">
-                        {{ tourOuvert ? `Tour ${tourOuvert.numero} · bénéficiaire : ${tourOuvert.beneficiaire || 'En cours'}` : 'Aucun tour actuellement ouvert' }}
-                    </h3>
-
-                    <!-- Boutons (Demande 5: Réservé au gestionnaire) -->
-                    <div v-if="isGestionnaire && tourOuvert" class="flex items-center gap-4 pt-1">
+            <!-- Modal Paiement & Gestion Pénalité (Demandes 6 & 7) -->
+            <div
+                v-if="showPaymentModal"
+                class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
+                @click.self="showPaymentModal = false"
+            >
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
+                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div>
+                            <h3 class="text-base font-bold text-gray-900">
+                                Cotisation Tour {{ activeModalTour?.numero }} · {{ activeModalMember?.nom }}
+                            </h3>
+                            <p class="text-xs text-gray-500">
+                                Statut actuel : <span class="font-semibold capitalize text-gray-800">{{ getCotisationStatusText(activeModalMember, activeModalTour) }}</span>
+                            </p>
+                        </div>
                         <button
-                            type="button"
-                            @click="cloturerTour"
-                            class="px-5 py-2.5 border border-gray-800 hover:bg-gray-50 text-gray-900 text-sm font-semibold rounded-lg transition-colors"
+                            @click="showPaymentModal = false"
+                            class="text-gray-400 hover:text-gray-600 font-bold p-1 text-sm cursor-pointer"
                         >
-                            Clôturer le tour {{ tourOuvert.numero }}
+                            &times;
                         </button>
                     </div>
 
-                    <p class="text-xs text-gray-500 pt-1">
-                        La distribution et la clôture des tours sont réservées au gestionnaire.
-                    </p>
-                </div>
-
-                <!-- Colonne Droite: Légende -->
-                <div class="md:col-span-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-                    <h3 class="text-base font-bold text-gray-900 mb-4">Légende</h3>
-
-                    <div class="flex flex-wrap gap-2 text-xs">
-                        <span class="px-3 py-1 rounded-md font-semibold bg-[#E2F2E9] text-[#1B6B4A]">
-                            Payé
-                        </span>
-                        <span class="px-3 py-1 rounded-md font-semibold bg-blue-100 text-blue-700">
-                            Partiel
-                        </span>
-                        <span class="px-3 py-1 rounded-md font-semibold bg-red-100 text-red-600">
-                            En retard / Dû
-                        </span>
-                        <span class="px-3 py-1 rounded-md font-semibold bg-gray-100 text-gray-600">
-                            En attente
-                        </span>
-                        <span class="px-3 py-1 rounded-md font-semibold bg-[#155A3E] text-white">
-                            Bénéficiaire
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Modal Paiement relié à Modules/Cotisation/app/Http/Controllers/PaiementController.php -->
-        <div
-            v-if="showPaymentModal"
-            class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-xs"
-        >
-            <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-900">Enregistrer un paiement</h2>
-                    <p class="text-xs text-gray-500 mt-1">
-                        {{ activeModalMember?.nom }} · Tour {{ activeModalTour?.numero }}
-                    </p>
-                </div>
-
-                <!-- Info Badges Attendue & Reste dû -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="bg-[#F8F9FA] p-3.5 rounded-xl border border-gray-100">
-                        <p class="text-[11px] text-gray-500 font-medium">Attendu</p>
-                        <p class="text-base font-bold text-gray-900 mt-1">
-                            {{ formatMoney(activeCotisation?.montant_attendu || cycle?.montant_cotisation) }} FCFA
-                        </p>
-                    </div>
-                    <div class="bg-red-50 p-3.5 rounded-xl border border-red-100">
-                        <p class="text-[11px] text-red-600 font-medium">Reste dû</p>
-                        <p class="text-base font-bold text-red-700 mt-1">
-                            {{ formatMoney(activeCotisation?.reste_du ?? cycle?.montant_cotisation) }} FCFA
-                        </p>
-                    </div>
-                </div>
-
-                <form @submit.prevent="submitPayment" class="space-y-4">
+                    <!-- Encarts montants -->
                     <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1">Montant (FCFA)</label>
-                            <input
-                                v-model.number="paymentForm.montant"
-                                type="number"
-                                placeholder="ex: 10000"
-                                required
-                                min="1"
-                                class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium focus:ring-2 focus:ring-[#1B6B4A]"
-                            />
+                        <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <p class="text-[11px] text-gray-500 font-medium">Déjà payé</p>
+                            <p class="text-base font-bold text-gray-900 mt-1">
+                                {{ formatMoney(activeCotisation?.montant_paye ?? 0) }} FCFA
+                            </p>
                         </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1">Mode</label>
-                            <select
-                                v-model="paymentForm.mode"
-                                class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium focus:ring-2 focus:ring-[#1B6B4A]"
-                            >
-                                <option value="especes">Espèces</option>
-                                <option value="mobile_money">Mobile Money</option>
-                                <option value="virement">Virement</option>
-                            </select>
+                        <div class="bg-red-50 p-3 rounded-xl border border-red-100">
+                            <p class="text-[11px] text-red-600 font-medium">Reste dû</p>
+                            <p class="text-base font-bold text-red-700 mt-1">
+                                {{ formatMoney(activeCotisation?.reste_du ?? cycle?.montant_cotisation) }} FCFA
+                            </p>
                         </div>
                     </div>
 
-                    <div class="flex items-center gap-3 pt-3">
-                        <button
-                            type="submit"
-                            :disabled="paymentLoading"
-                            class="flex-1 py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
-                        >
-                            {{ paymentLoading ? 'Enregistrement...' : 'Enregistrer le paiement' }}
-                        </button>
+                    <!-- Formulaire d'enregistrement d'un paiement -->
+                    <form v-if="canRecordPayment" @submit.prevent="submitPayment" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-900 mb-1">Montant à régler (FCFA)</label>
+                                <input
+                                    v-model.number="paymentForm.montant"
+                                    type="number"
+                                    required
+                                    min="1"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-medium focus:ring-2 focus:ring-[#1B6B4A]"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-900 mb-1">Mode de règlement</label>
+                                <select
+                                    v-model="paymentForm.mode"
+                                    class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs font-medium focus:ring-2 focus:ring-[#1B6B4A]"
+                                >
+                                    <option value="especes">Espèces</option>
+                                    <option value="mobile_money">Mobile Money</option>
+                                    <option value="virement">Virement</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3 pt-2">
+                            <button
+                                type="submit"
+                                :disabled="paymentLoading"
+                                class="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <span>{{ paymentLoading ? 'Enregistrement...' : 'Enregistrer le paiement' }}</span>
+                            </button>
+                            <button
+                                type="button"
+                                @click="showPaymentModal = false"
+                                class="px-4 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-lg cursor-pointer"
+                            >
+                                Fermer
+                            </button>
+                        </div>
+                    </form>
+                    <div v-else class="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-800">
+                        <span>Vous ne disposez pas de l'autorisation requise pour enregistrer un paiement.</span>
                         <button
                             type="button"
                             @click="showPaymentModal = false"
-                            class="px-5 py-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-lg transition-colors"
+                            class="px-3 py-1.5 border border-amber-300 hover:bg-amber-100 rounded-lg text-xs font-semibold cursor-pointer"
                         >
-                            Annuler
+                            Fermer
                         </button>
                     </div>
-                </form>
+
+                    <!-- Historique des paiements avec possibilité d'annuler (Demande 7) -->
+                    <div v-if="activeCotisation?.paiements && activeCotisation.paiements.length > 0" class="pt-3 border-t border-gray-100 space-y-2">
+                        <p class="text-xs font-bold text-gray-800">Historique des versements</p>
+                        <div class="space-y-1.5 max-h-36 overflow-y-auto">
+                            <div
+                                v-for="p in activeCotisation.paiements"
+                                :key="p.id"
+                                class="flex items-center justify-between p-2.5 rounded-lg border border-gray-100 text-xs bg-gray-50"
+                            >
+                                <div>
+                                    <p class="font-bold text-gray-900">{{ formatMoney(p.montant) }} FCFA · <span class="capitalize text-gray-600">{{ p.mode }}</span></p>
+                                    <p class="text-[10px] text-gray-400">{{ formatDate(p.date_paiement) }}</p>
+                                    <p v-if="p.annule" class="text-[10px] text-red-600 font-semibold mt-0.5">
+                                        Annulé : {{ p.motif_annulation }}
+                                    </p>
+                                </div>
+                                <button
+                                    v-if="canCancel && !p.annule"
+                                    type="button"
+                                    @click="openCancelPaymentModal(p)"
+                                    class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded text-[11px] cursor-pointer"
+                                >
+                                    Annuler ce paiement
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bloc Pénalité (Demande 7: annuler pénalité avec motif) -->
+                    <div v-if="activeCotisation?.penalite" class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-amber-900">
+                                Pénalité : {{ formatMoney(activeCotisation.penalite.montant) }} FCFA ({{ activeCotisation.penalite.statut }})
+                            </span>
+                            <button
+                                v-if="canCancel && activeCotisation.penalite.statut !== 'annulee'"
+                                type="button"
+                                @click="openCancelPenaliteModal(activeCotisation.penalite)"
+                                class="px-2 py-1 bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold rounded text-[11px] cursor-pointer"
+                            >
+                                Annuler la pénalité
+                            </button>
+                        </div>
+                        <p v-if="activeCotisation.penalite.motif_annulation" class="text-[11px] text-amber-800">
+                            Motif d'annulation : {{ activeCotisation.penalite.motif_annulation }}
+                        </p>
+                    </div>
+                </div>
             </div>
+
+            <!-- Modal Motif Annulation (Demande 7) -->
+            <div
+                v-if="showCancelReasonModal"
+                class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
+                @click.self="showCancelReasonModal = false"
+            >
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-base font-bold text-gray-900">
+                        {{ cancelTargetType === 'paiement' ? 'Annuler le paiement' : 'Annuler la pénalité' }}
+                    </h3>
+                    <p class="text-xs text-gray-500">
+                        Veuillez renseigner un justificatif ou motif obligatoire d'annulation.
+                    </p>
+
+                    <form @submit.prevent="submitCancelWithReason" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1">Motif d'annulation *</label>
+                            <textarea
+                                v-model="cancelReason"
+                                required
+                                rows="3"
+                                placeholder="ex: Erreur de saisie / Justificatif médical fourni..."
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 text-xs text-gray-900 focus:ring-2 focus:ring-[#1B6B4A]"
+                            ></textarea>
+                        </div>
+
+                        <div class="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                @click="showCancelReasonModal = false"
+                                class="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                type="submit"
+                                class="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg cursor-pointer"
+                            >
+                                Confirmer l'annulation
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Confirmation Modal Card (Demande 4) -->
+            <ConfirmModal
+                :show="confirmData.show"
+                :title="confirmData.title"
+                :message="confirmData.message"
+                :confirmText="confirmData.confirmText"
+                :isDanger="confirmData.isDanger"
+                @confirm="handleConfirmAction"
+                @cancel="confirmData.show = false"
+            />
         </div>
     </AppLayout>
 </template>
@@ -227,6 +317,7 @@
 import { ref, computed } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 
 const props = defineProps({
     cycle: Object,
@@ -243,8 +334,28 @@ const props = defineProps({
 
 const page = usePage()
 
-const isGestionnaire = computed(() => {
-    return page.props.auth?.user?.role !== 'tresorier'
+const canClotureTour = computed(() => {
+    if (page.props.auth?.user?.permissions) {
+        return !!page.props.auth.user.permissions.cloturer_tour
+    }
+    const role = page.props.auth?.user?.role
+    return role === 'administrateur' || role === 'gestionnaire'
+})
+
+const canCancel = computed(() => {
+    if (page.props.auth?.user?.permissions) {
+        return !!page.props.auth.user.permissions.annuler_paiement || !!page.props.auth.user.permissions.annuler_penalite
+    }
+    const role = page.props.auth?.user?.role
+    return role === 'administrateur' || role === 'gestionnaire'
+})
+
+const canRecordPayment = computed(() => {
+    if (page.props.auth?.user?.permissions) {
+        return !!page.props.auth.user.permissions.enregistrer_paiement
+    }
+    const role = page.props.auth?.user?.role
+    return role === 'administrateur' || role === 'tresorier'
 })
 
 function getCotisation(membre, tour) {
@@ -255,11 +366,11 @@ function getCotisation(membre, tour) {
 function getCotisationStatusText(membre, tour) {
     const c = getCotisation(membre, tour)
     if (!c) {
-        return tour.statut === 'ouvert' ? 'En retard' : 'En attente'
+        return (tour.is_retard_applicable && tour.statut === 'ouvert') ? 'En retard' : 'En attente'
     }
     if (c.statut === 'paye' || c.statut === 'payee') return 'Payé'
     if (c.statut === 'partielle' || c.statut === 'partiel') return 'Partiel'
-    if (tour.statut === 'ouvert' && c.reste_du > 0) return 'En retard'
+    if (c.reste_du > 0 && tour.statut === 'ouvert' && tour.is_retard_applicable) return 'En retard'
     return 'En attente'
 }
 
@@ -276,8 +387,11 @@ function getCotisationClass(membre, tour) {
     if (c && (c.statut === 'partielle' || c.statut === 'partiel')) {
         return 'bg-blue-50 text-blue-700 border border-blue-200'
     }
-    if (tour.statut === 'ouvert') {
+    if (tour.statut === 'ouvert' && tour.is_retard_applicable && getCotisationReste(membre, tour) > 0) {
         return 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 shadow-2xs'
+    }
+    if (tour.statut === 'ouvert') {
+        return 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 shadow-2xs'
     }
     return 'bg-[#F0F0EC] text-gray-600'
 }
@@ -324,10 +438,78 @@ function submitPayment() {
     })
 }
 
-function cloturerTour() {
+// Clôturer Tour avec Modal Card (Demande 4)
+const confirmData = ref({
+    show: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirmer',
+    isDanger: false,
+    action: null,
+})
+
+function askCloturerTour() {
     if (!props.tourOuvert?.id) return
-    if (confirm(`Êtes-vous sûr de vouloir clôturer le tour ${props.tourOuvert.numero} ?`)) {
-        router.post(`/cycles/${props.cycle.id}/tours/${props.tourOuvert.id}/cloturer`)
+    confirmData.value = {
+        show: true,
+        title: `Clôturer le Tour ${props.tourOuvert.numero}`,
+        message: `Êtes-vous sûr de vouloir clôturer le tour ${props.tourOuvert.numero} et ouvrir le suivant ?`,
+        confirmText: 'Clôturer le tour',
+        isDanger: false,
+        action: () => {
+            router.post(`/cycles/${props.cycle.id}/tours/${props.tourOuvert.id}/cloturer`)
+        }
+    }
+}
+
+function handleConfirmAction() {
+    if (confirmData.value.action) {
+        confirmData.value.action()
+    }
+    confirmData.value.show = false
+}
+
+// Annulation avec motif obligatoire (Demande 7)
+const showCancelReasonModal = ref(false)
+const cancelTargetType = ref('paiement')
+const cancelTargetItem = ref(null)
+const cancelReason = ref('')
+
+function openCancelPaymentModal(paiement) {
+    cancelTargetType.value = 'paiement'
+    cancelTargetItem.value = paiement
+    cancelReason.value = ''
+    showCancelReasonModal.value = true
+}
+
+function openCancelPenaliteModal(penalite) {
+    cancelTargetType.value = 'penalite'
+    cancelTargetItem.value = penalite
+    cancelReason.value = ''
+    showCancelReasonModal.value = true
+}
+
+function submitCancelWithReason() {
+    if (!cancelReason.value.trim()) return
+
+    if (cancelTargetType.value === 'paiement') {
+        router.post(`/paiements/${cancelTargetItem.value.id}/annuler`, {
+            motif_annulation: cancelReason.value
+        }, {
+            onSuccess: () => {
+                showCancelReasonModal.value = false
+                showPaymentModal.value = false
+            }
+        })
+    } else {
+        router.post(`/penalites/${cancelTargetItem.value.id}/annuler`, {
+            motif_annulation: cancelReason.value
+        }, {
+            onSuccess: () => {
+                showCancelReasonModal.value = false
+                showPaymentModal.value = false
+            }
+        })
     }
 }
 
