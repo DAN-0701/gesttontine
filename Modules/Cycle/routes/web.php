@@ -16,6 +16,8 @@ Route::post('/cycles/{cycle}/demarrer', [CycleController::class, 'demarrer'])->n
 
 Route::post('/cycles/{cycle}/cloturer', [CycleController::class, 'cloturer'])->name('cycles.cloturer');
 Route::post('/cycles/{cycle}/tours/{tour}/cloturer', [CycleController::class, 'cloturerTour'])->name('cycles.tours.cloturer');
+Route::post('/cycles/{cycle}/tours/{tour}/cloture-forcee', [CycleController::class, 'clotureForceeTour'])->name('cycles.tours.clotureForcee');
+Route::post('/cycles/{cycle}/membres/{membre}/swap-rang', [CycleController::class, 'swapRangMembre'])->name('cycles.membres.swapRang');
 
 Route::get('/cycles/{cycle}/tableau', [CycleController::class, 'show'])->name('cycles.tableau');
 

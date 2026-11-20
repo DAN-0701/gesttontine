@@ -39,7 +39,7 @@
                 <!-- Ligne 1 -->
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Nom du cycle</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Nom du cycle <span class="text-red-500 font-bold">*</span></label>
                         <input
                             v-model="form.libelle"
                             type="text"
@@ -49,7 +49,7 @@
                         <p v-if="form.errors.libelle" class="text-xs text-red-600 mt-1">{{ form.errors.libelle }}</p>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Cotisation ({{ currencyLabel }})</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Cotisation ({{ currencyLabel }}) <span class="text-red-500 font-bold">*</span></label>
                         <input
                             v-model.number="form.montant_cotisation"
                             type="number"
@@ -59,7 +59,7 @@
                         <p v-if="form.errors.montant_cotisation" class="text-xs text-red-600 mt-1">{{ form.errors.montant_cotisation }}</p>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Périodicité</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Périodicité <span class="text-red-500 font-bold">*</span></label>
                         <select
                             v-model="form.periodicite"
                             class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
@@ -71,7 +71,7 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Date de début</label>
+                        <label class="block text-xs font-semibold text-gray-800 mb-1.5">Date de début <span class="text-red-500 font-bold">*</span></label>
                         <input
                             v-model="form.date_debut"
                             type="date"
@@ -167,38 +167,26 @@
                         <div
                             v-for="m in filteredAvailableMembers"
                             :key="m.id"
-                            :class="[
-                                'flex items-center justify-between p-3 rounded-xl border transition-colors',
-                                isAlreadyInCycle(m.id)
-                                    ? 'bg-gray-50 border-gray-100 text-gray-400'
-                                    : 'bg-white border-gray-200 hover:border-gray-300'
-                            ]"
+                            class="flex items-center justify-between p-3 rounded-xl border border-gray-200 hover:border-gray-300 bg-white transition-colors"
                         >
                             <div class="flex items-center gap-3">
                                 <input
-                                    v-if="!isAlreadyInCycle(m.id)"
                                     type="checkbox"
                                     :value="m.id"
                                     v-model="selectedAvailableIds"
                                     class="rounded border-gray-300 text-[#1B6B4A] focus:ring-[#1B6B4A]"
                                 />
                                 <div>
-                                    <p class="text-sm font-semibold" :class="isAlreadyInCycle(m.id) ? 'text-gray-500' : 'text-gray-900'">
+                                    <p class="text-sm font-semibold text-gray-900">
                                         {{ m.nom }}
                                     </p>
                                     <p class="text-xs text-gray-400">{{ m.telephone }}</p>
                                 </div>
                             </div>
-                            <span
-                                v-if="isAlreadyInCycle(m.id)"
-                                class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium"
-                            >
-                                Dans le cycle
-                            </span>
                         </div>
 
                         <div v-if="filteredAvailableMembers.length === 0" class="py-6 text-center text-gray-400 text-xs">
-                            Aucun membre trouvé en base de données.
+                            Aucun membre disponible à ajouter.
                         </div>
                     </div>
 
@@ -486,9 +474,10 @@ const memberSearch = ref('')
 const isAllSelected = ref(false)
 
 const filteredAvailableMembers = computed(() => {
-    if (!memberSearch.value) return availableMembersList.value
+    let list = availableMembersList.value.filter(m => !isAlreadyInCycle(m.id))
+    if (!memberSearch.value) return list
     const q = memberSearch.value.toLowerCase()
-    return availableMembersList.value.filter(m =>
+    return list.filter(m =>
         (m.nom && m.nom.toLowerCase().includes(q)) ||
         (m.telephone && m.telephone.toLowerCase().includes(q))
     )

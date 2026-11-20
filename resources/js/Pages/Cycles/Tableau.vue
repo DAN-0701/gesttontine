@@ -62,10 +62,40 @@
                         </thead>
                         <tbody>
                             <tr v-for="m in membres" :key="m.id">
-                                <!-- Membre Row Label -->
+                                <!-- Membre Row Label avec flèches monter/descendre pour swap bénéficiaire/rang -->
                                 <td class="text-left font-medium text-gray-800 pr-4 whitespace-nowrap">
-                                    <span class="text-gray-400 font-semibold mr-2">{{ m.rang }}</span>
-                                    <span class="font-bold text-gray-900">{{ m.nom }}</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <!-- Flèches monter / descendre (Demande utilisateur) -->
+                                        <div v-if="canChangeBeneficiary" class="flex flex-col gap-0.5">
+                                            <button
+                                                type="button"
+                                                @click="swapMemberRang(m, 'up')"
+                                                :disabled="m.rang <= 1 || swapLoading"
+                                                class="p-0.5 text-gray-400 hover:text-[#1B6B4A] hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                                title="Monter le rang / avancer le tour bénéficiaire"
+                                            >
+                                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                @click="swapMemberRang(m, 'down')"
+                                                :disabled="m.rang >= membres.length || swapLoading"
+                                                class="p-0.5 text-gray-400 hover:text-[#1B6B4A] hover:bg-emerald-50 rounded disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                                                title="Descendre le rang / retarder le tour bénéficiaire"
+                                            >
+                                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </button>
+                                        </div>
+
+                                        <span class="w-5 h-5 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-[10px] font-bold">
+                                            {{ m.rang }}
+                                        </span>
+                                        <span class="font-bold text-gray-900 ml-1">{{ m.nom }}</span>
+                                    </div>
                                 </td>
 
                                 <!-- Cases pour chaque tour -->
@@ -85,10 +115,8 @@
 
                                     <!-- Sinon case de cotisation -->
                                     <div
-                                        v-else
-                                        @click="handleCellClick(m, t)"
                                         :class="[
-                                            'w-full py-3.5 px-1 rounded-lg text-xs font-semibold flex flex-col items-center justify-center transition-all cursor-pointer',
+                                            'w-full py-2.5 px-1 rounded-lg text-xs font-semibold flex flex-col items-center justify-center transition-all',
                                             getCotisationClass(m, t)
                                         ]"
                                     >
@@ -99,11 +127,54 @@
                                         >
                                             {{ formatMoney(getCotisationReste(m, t)) }}
                                         </span>
+
+                                        <!-- Bouton explicite "Payer" sur chaque ligne (Demande 10) -->
+                                        <button
+                                            v-if="t.statut === 'ouvert'"
+                                            type="button"
+                                            :disabled="!canRecordPayment"
+                                            @click="canRecordPayment && handleCellClick(m, t)"
+                                            :title="canRecordPayment ? 'Enregistrer un paiement' : 'Permission requise (Trésorier/Administrateur)'"
+                                            :class="[
+                                                'mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold transition-colors',
+                                                canRecordPayment
+                                                    ? 'bg-[#1B6B4A] text-white hover:bg-[#155A3E] cursor-pointer'
+                                                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                            ]"
+                                        >
+                                            Payer
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Zone d'action Clôture Forcée sous les paiements du cycle (Demande utilisateur) -->
+                <div v-if="canClotureTour && tourOuvert" class="mt-6 pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-red-50/50 p-4 rounded-xl border border-red-100">
+                    <div>
+                        <h4 class="text-xs font-bold text-red-900 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span>Clôture forcée du Tour {{ tourOuvert.numero }}</span>
+                        </h4>
+                        <p class="text-[11px] text-red-700 mt-0.5">
+                            En cas d'impayés non résolus ou de blocage, vous pouvez forcer la clôture du tour en cours avec un motif justificatif obligatoire.
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        @click="openClotureForceeModal"
+                        class="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                    >
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                        <span>Forcer la clôture du tour</span>
+                    </button>
                 </div>
             </div>
 
@@ -309,6 +380,62 @@
                 @confirm="handleConfirmAction"
                 @cancel="confirmData.show = false"
             />
+
+            <!-- Modal Clôture Forcée (Demande utilisateur) -->
+            <div
+                v-if="showClotureForceeModal"
+                class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
+                @click.self="showClotureForceeModal = false"
+            >
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <h3 class="text-base font-bold text-red-600">
+                            Clôture forcée du Tour {{ tourOuvert?.numero }}
+                        </h3>
+                        <button
+                            @click="showClotureForceeModal = false"
+                            class="text-gray-400 hover:text-gray-600 font-bold p-1 text-sm cursor-pointer"
+                        >
+                            &times;
+                        </button>
+                    </div>
+
+                    <form @submit.prevent="submitClotureForcee" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">
+                                Motif justificatif obligatoire <span class="text-red-500 font-bold">*</span>
+                            </label>
+                            <textarea
+                                v-model="clotureForceeMotif"
+                                required
+                                rows="3"
+                                placeholder="Indiquez le motif de cette clôture forcée (ex: défaut de paiement persistant, accord exceptionnel des membres)..."
+                                class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                            ></textarea>
+                            <p class="text-[11px] text-gray-500 mt-1">
+                                Le tour actuel sera clôturé de force, les cotisations restantes seront archivées et le tour suivant sera ouvert.
+                            </p>
+                        </div>
+
+                        <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                            <button
+                                type="button"
+                                @click="showClotureForceeModal = false"
+                                class="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                type="submit"
+                                :disabled="clotureForceeLoading || !clotureForceeMotif.trim()"
+                                class="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 cursor-pointer"
+                            >
+                                {{ clotureForceeLoading ? 'Clôture en cours...' : 'Confirmer la clôture forcée' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
     </AppLayout>
 </template>
@@ -356,6 +483,14 @@ const canRecordPayment = computed(() => {
     }
     const role = page.props.auth?.user?.role
     return role === 'administrateur' || role === 'tresorier'
+})
+
+const canChangeBeneficiary = computed(() => {
+    if (page.props.auth?.user?.permissions) {
+        return !!page.props.auth.user.permissions.changer_beneficiaire
+    }
+    const role = page.props.auth?.user?.role
+    return role === 'administrateur' || role === 'gestionnaire'
 })
 
 function getCotisation(membre, tour) {
@@ -511,6 +646,48 @@ function submitCancelWithReason() {
             }
         })
     }
+}
+
+// Clôture forcée d'un tour avec motif obligatoire (Demande utilisateur)
+const showClotureForceeModal = ref(false)
+const clotureForceeMotif = ref('')
+const clotureForceeLoading = ref(false)
+
+function openClotureForceeModal() {
+    clotureForceeMotif.value = ''
+    showClotureForceeModal.value = true
+}
+
+function submitClotureForcee() {
+    if (!props.tourOuvert?.id || !clotureForceeMotif.value.trim()) return
+    clotureForceeLoading.value = true
+    router.post(`/cycles/${props.cycle.id}/tours/${props.tourOuvert.id}/cloture-forcee`, {
+        motif: clotureForceeMotif.value.trim()
+    }, {
+        onSuccess: () => {
+            showClotureForceeModal.value = false
+            clotureForceeMotif.value = ''
+        },
+        onFinish: () => {
+            clotureForceeLoading.value = false
+        }
+    })
+}
+
+// Déplacement membre / changement ordre bénéficiaire par flèches (Demande utilisateur)
+const swapLoading = ref(false)
+
+function swapMemberRang(membre, direction) {
+    if (swapLoading.value) return
+    swapLoading.value = true
+    router.post(`/cycles/${props.cycle.id}/membres/${membre.id}/swap-rang`, {
+        direction: direction
+    }, {
+        preserveScroll: true,
+        onFinish: () => {
+            swapLoading.value = false
+        }
+    })
 }
 
 function formatMoney(amount) {

@@ -19,10 +19,48 @@
                 </Link>
             </div>
 
+            <!-- Filtres et Recherche de cycles (Demande 6) -->
+            <div class="flex flex-col md:flex-row gap-4 items-end bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                <div class="flex-1 w-full">
+                    <label class="block text-xs font-semibold text-gray-800 mb-1.5">Rechercher un cycle</label>
+                    <input
+                        v-model="search"
+                        type="text"
+                        placeholder="Nom ou libellé du cycle..."
+                        @keyup.enter="handleSearch"
+                        class="w-full px-3.5 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
+                    />
+                </div>
+                <div class="w-full md:w-48">
+                    <label class="block text-xs font-semibold text-gray-800 mb-1.5">Filtrer par statut</label>
+                    <select
+                        v-model="statut"
+                        @change="handleSearch"
+                        class="w-full px-3.5 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
+                    >
+                        <option value="tous">Tous les statuts</option>
+                        <option value="brouillon">Brouillon</option>
+                        <option value="actif">Actif (En cours)</option>
+                        <option value="termine">Terminé</option>
+                    </select>
+                </div>
+                <div>
+                    <button
+                        @click="handleSearch"
+                        class="w-full md:w-auto inline-flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                        <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <span>Rechercher</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Liste des cycles -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div
-                    v-for="c in cycles"
+                    v-for="c in displayedCycles"
                     :key="c.id"
                     class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4 hover:border-gray-200 transition-all flex flex-col justify-between"
                 >
@@ -82,6 +120,19 @@
                         </Link>
 
                         <div class="flex items-center gap-2">
+                            <!-- Modifier si brouillon -->
+                            <Link
+                                v-if="canCreateCycle && c.statut === 'brouillon'"
+                                :href="`/cycles/${c.id}/edit`"
+                                class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                                title="Modifier ce cycle"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                <span>Modifier</span>
+                            </Link>
+
                             <!-- Démarrer si brouillon -->
                             <button
                                 v-if="canStartCycle && c.statut === 'brouillon'"
@@ -108,14 +159,36 @@
                                 </svg>
                                 <span>Clôturer</span>
                             </button>
+
+                            <!-- Supprimer si brouillon -->
+                            <button
+                                v-if="canCreateCycle && c.statut === 'brouillon'"
+                                type="button"
+                                @click="askSupprimerCycle(c)"
+                                class="inline-flex items-center gap-1 p-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-lg border border-red-200 transition-colors cursor-pointer"
+                                title="Supprimer ce cycle brouillon"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <div v-if="!cycles || cycles.length === 0" class="col-span-2 py-12 text-center text-gray-400 bg-white rounded-2xl border border-gray-100">
-                    Aucun cycle créé pour le moment.
+                <div v-if="!displayedCycles || displayedCycles.length === 0" class="col-span-2 py-12 text-center text-gray-400 bg-white rounded-2xl border border-gray-100">
+                    Aucun cycle trouvé pour le moment.
                 </div>
             </div>
+
+            <!-- Pagination (Demande 4 : 5 par page) -->
+            <Pagination
+                v-if="paginationLinks.length"
+                :links="paginationLinks"
+                :from="cyclesPagination?.from"
+                :to="cyclesPagination?.to"
+                :total="cyclesPagination?.total"
+            />
 
             <!-- Confirmation Modal Card (Demande 4) -->
             <ConfirmModal
@@ -136,15 +209,42 @@ import { ref, computed } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
+import Pagination from '@/Components/Pagination.vue'
 
 const props = defineProps({
     cycles: {
-        type: Array,
+        type: [Array, Object],
         default: () => []
-    }
+    },
+    filters: Object,
 })
 
 const page = usePage()
+
+const search = ref(props.filters?.search || '')
+const statut = ref(props.filters?.statut || 'tous')
+
+const cyclesPagination = computed(() => {
+    return Array.isArray(props.cycles) ? null : props.cycles
+})
+
+const paginationLinks = computed(() => {
+    return cyclesPagination.value?.links || []
+})
+
+const displayedCycles = computed(() => {
+    if (Array.isArray(props.cycles)) {
+        return props.cycles
+    }
+    return props.cycles?.data || []
+})
+
+function handleSearch() {
+    router.get('/cycles', {
+        search: search.value,
+        statut: statut.value
+    }, { preserveState: true })
+}
 
 const canCreateCycle = computed(() => {
     if (page.props.auth?.user?.permissions) {
@@ -202,6 +302,19 @@ function askCloturerCycle(cycle) {
         isDanger: true,
         action: () => {
             router.post(`/cycles/${cycle.id}/cloturer`)
+        }
+    }
+}
+
+function askSupprimerCycle(cycle) {
+    confirmData.value = {
+        show: true,
+        title: 'Supprimer le cycle',
+        message: `Voulez-vous vraiment supprimer le cycle brouillon « ${cycle.libelle} » ? Cette action est irréversible.`,
+        confirmText: 'Supprimer définitivement',
+        isDanger: true,
+        action: () => {
+            router.delete(`/cycles/${cycle.id}`)
         }
     }
 }

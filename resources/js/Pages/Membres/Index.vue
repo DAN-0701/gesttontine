@@ -9,7 +9,7 @@
                 </div>
 
                 <div v-if="canCreateMember" class="flex items-center gap-3">
-                    <!-- Bouton Importer Excel/CSV (Demande 10) -->
+                    <!-- Bouton Importer / Télécharger Modèle Excel fusionné (Demande 2) -->
                     <button
                         type="button"
                         @click="showImportModal = true"
@@ -18,7 +18,7 @@
                         <svg class="w-4 h-4 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                         </svg>
-                        <span>Importer Excel</span>
+                        <span>Importer des membres (Excel)</span>
                     </button>
 
                     <!-- Bouton Nouveau membre -->
@@ -165,12 +165,21 @@
                             </tr>
                             <tr v-if="displayedMembres.length === 0">
                                 <td colspan="6" class="py-8 text-center text-gray-400">
-                                    Aucun membre enregistré en base de données.
+                                    Aucun membre trouvé.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Pagination (Demande 4 : 10 par page) -->
+                <Pagination
+                    v-if="paginationLinks.length"
+                    :links="paginationLinks"
+                    :from="membresPagination?.from"
+                    :to="membresPagination?.to"
+                    :total="membresPagination?.total"
+                />
             </div>
 
             <!-- Modal Détails du membre (Demande 1) -->
@@ -239,15 +248,18 @@
                 </div>
             </div>
 
-            <!-- Modal Import Excel (Demande 10) -->
+            <!-- Modal Import Excel & Téléchargement Modèle (Demande 2) -->
             <div
                 v-if="showImportModal"
                 class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
                 @click.self="showImportModal = false"
             >
-                <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
                     <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-                        <h3 class="text-base font-bold text-gray-900">Importer des membres (Excel / CSV)</h3>
+                        <div>
+                            <h3 class="text-base font-bold text-gray-900">Importer des membres</h3>
+                            <p class="text-xs text-gray-500">Créez votre fichier directement avec le modèle officiel ou téléversez-le</p>
+                        </div>
                         <button
                             @click="showImportModal = false"
                             class="text-gray-400 hover:text-gray-600 font-bold p-1 text-sm cursor-pointer"
@@ -256,14 +268,32 @@
                         </button>
                     </div>
 
-                    <form @submit.prevent="submitImport" class="space-y-4">
-                        <p class="text-xs text-gray-600 leading-relaxed">
-                            Le fichier doit comporter les colonnes suivantes sur la première ligne :
-                            <code class="font-mono bg-gray-100 px-1 py-0.5 rounded text-[11px]">nom, prenom, telephone, email, adresse, date_adhesion, statut</code>.
-                        </p>
-
+                    <!-- Étape 1 : Téléchargement du Modèle Excel pré-formaté -->
+                    <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-between gap-4">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-800 mb-1">Sélectionner un fichier (.xlsx, .xls, .csv)</label>
+                            <p class="text-xs font-bold text-emerald-900">1. Obtenir le modèle avec les colonnes bien alignées</p>
+                            <p class="text-[11px] text-emerald-700 mt-0.5">
+                                Téléchargez le modèle, ouvrez-le dans Excel, saisissez vos membres et enregistrez.
+                            </p>
+                        </div>
+                        <a
+                            href="/members/template"
+                            class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                        >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span>Télécharger le modèle</span>
+                        </a>
+                    </div>
+
+                    <!-- Étape 2 : Envoyer le fichier rempli -->
+                    <form @submit.prevent="submitImport" class="space-y-4">
+                        <div>
+                            <p class="text-xs font-bold text-gray-900 mb-1">2. Envoyer le fichier complété</p>
+                            <p class="text-[11px] text-gray-500 mb-2">
+                                Formats acceptés : .xlsx, .xls, .csv. Les doublons et membres existants seront automatiquement détectés.
+                            </p>
                             <input
                                 type="file"
                                 accept=".xlsx,.xls,.csv,.txt"
@@ -284,12 +314,12 @@
                             <button
                                 type="submit"
                                 :disabled="importForm.processing"
-                                class="px-4 py-2 text-xs font-semibold text-white bg-[#1B6B4A] hover:bg-[#155A3E] rounded-lg disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                                class="px-5 py-2 text-xs font-semibold text-white bg-[#1B6B4A] hover:bg-[#155A3E] rounded-lg disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
                             >
                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
-                                <span>{{ importForm.processing ? 'Importation...' : 'Importer' }}</span>
+                                <span>{{ importForm.processing ? 'Importation en cours...' : 'Lancer l\'importation' }}</span>
                             </button>
                         </div>
                     </form>
@@ -315,16 +345,25 @@ import { ref, computed } from 'vue'
 import { Link, router, usePage, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
+import Pagination from '@/Components/Pagination.vue'
 
 const props = defineProps({
     membres: {
-        type: Array,
+        type: [Array, Object],
         default: () => []
     },
     filters: Object,
 })
 
 const page = usePage()
+
+const membresPagination = computed(() => {
+    return Array.isArray(props.membres) ? null : props.membres
+})
+
+const paginationLinks = computed(() => {
+    return membresPagination.value?.links || []
+})
 
 const canCreateMember = computed(() => {
     if (page.props.auth?.user?.permissions) {
@@ -346,22 +385,10 @@ const search = ref(props.filters?.search || '')
 const statut = ref(props.filters?.statut || 'tous')
 
 const displayedMembres = computed(() => {
-    let list = props.membres || []
-
-    if (search.value) {
-        const q = search.value.toLowerCase()
-        list = list.filter(m =>
-            (m.nom && m.nom.toLowerCase().includes(q)) ||
-            (m.prenom && m.prenom.toLowerCase().includes(q)) ||
-            (m.telephone && m.telephone.toLowerCase().includes(q))
-        )
+    if (Array.isArray(props.membres)) {
+        return props.membres
     }
-
-    if (statut.value && statut.value !== 'tous') {
-        list = list.filter(m => m.statut === statut.value)
-    }
-
-    return list
+    return props.membres?.data || []
 })
 
 function handleSearch() {

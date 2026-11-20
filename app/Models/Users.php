@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Modules\Cotisation\Models\Paiements;
 use Modules\Cotisation\Models\Penalites;
 use Modules\Cycle\Models\Cycle;
@@ -12,7 +13,7 @@ use Modules\Administration\Models\UserPermission;
 
 class Users extends Authenticatable
 {
-    use HasFactory;
+    use HasFactory, Notifiable;
 
     public $timestamps = false;
 
@@ -23,7 +24,8 @@ class Users extends Authenticatable
         'name',
         'email',
         'password',
-        'role'
+        'role',
+        'force_password_change'
     ];
 
     protected $hidden = [
@@ -95,6 +97,7 @@ class Users extends Authenticatable
                 'creer_membre', 'modifier_membre', 'supprimer_membre',
                 'creer_cycle', 'demarrer_cycle', 'cloturer_cycle', 'cloturer_tour',
                 'annuler_penalite', 'annuler_paiement',
+                'creer_utilisateur', 'changer_beneficiaire',
                 'consulter' => true,
                 default => false,
             },
@@ -117,7 +120,9 @@ class Users extends Authenticatable
             'creer_membre', 'modifier_membre', 'supprimer_membre',
             'creer_cycle', 'demarrer_cycle', 'cloturer_cycle', 'cloturer_tour',
             'enregistrer_paiement', 'corriger_paiement', 'annuler_paiement',
-            'payer_penalite', 'annuler_penalite', 'consulter',
+            'payer_penalite', 'annuler_penalite',
+            'creer_utilisateur', 'changer_beneficiaire',
+            'consulter',
         ];
         $result = [];
         foreach ($perms as $p) {

@@ -264,7 +264,7 @@ function isGranted(user, permission) {
 
     // Par défaut selon le rôle
     if (user.role === 'gestionnaire') {
-        return ['creer_membre', 'modifier_membre', 'supprimer_membre', 'creer_cycle', 'demarrer_cycle', 'cloturer_cycle', 'cloturer_tour', 'annuler_penalite', 'annuler_paiement'].includes(permission.nom)
+        return ['creer_membre', 'modifier_membre', 'supprimer_membre', 'creer_cycle', 'demarrer_cycle', 'cloturer_cycle', 'cloturer_tour', 'annuler_penalite', 'annuler_paiement', 'creer_utilisateur'].includes(permission.nom)
     }
     if (user.role === 'tresorier') {
         return ['enregistrer_paiement', 'corriger_paiement', 'payer_penalite'].includes(permission.nom)

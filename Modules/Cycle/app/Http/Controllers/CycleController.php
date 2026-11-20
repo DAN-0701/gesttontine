@@ -12,6 +12,7 @@ use Modules\Cotisation\Models\Cotisation;
 use Modules\Cycle\Models\Cycle;
 use Modules\Cycle\Models\CycleMembers;
 use Modules\Cycle\Models\Tours;
+use Modules\Cycle\Services\TourService;
 use Modules\Members\Models\members;
 
 class CycleController extends Controller
@@ -45,6 +46,11 @@ class CycleController extends Controller
      */
     public function dashboard(Request $request)
     {
+        // Traitement automatique à la volée des cycles dont la date est atteinte
+        $this->traiterDemarrageAutomatique();
+        $this->traiterAvancementToursAutomatique();
+        $this->traiterClotureCyclesAutomatique();
+
         // Récupérer tous les cycles disponibles pour le sélecteur
         $allCycles = Cycle::select('id', 'libelle', 'statut')->orderBy('id', 'desc')->get();
 
@@ -163,11 +169,30 @@ class CycleController extends Controller
     /**
      * Liste des cycles (Image 05)
      */
-    public function index()
+    public function index(Request $request)
     {
-        $cycles = Cycle::withCount('membres')->with('tours')->get()->map(function ($c) {
+        // Traitement automatique à la volée des cycles dont la date est atteinte
+        $this->traiterDemarrageAutomatique();
+        $this->traiterAvancementToursAutomatique();
+        $this->traiterClotureCyclesAutomatique();
+
+        $query = Cycle::withCount('membres')->with('tours');
+
+        if ($search = $request->input('search')) {
+            $query->where('libelle', 'like', "%{$search}%");
+        }
+
+        if ($statut = $request->input('statut')) {
+            if ($statut !== 'tous') {
+                $query->where('statut', $statut);
+            }
+        }
+
+        $cyclesPaginated = $query->orderBy('id', 'desc')->paginate(5)->withQueryString();
+
+        $cyclesPaginated->through(function ($c) {
             $totalTours = $c->tours->count();
-            $toursDistribues = $c->tours->whereIn('statut', ['ferme', 'distribue'])->count();
+            $toursDistribues = $c->tours->whereIn('statut', ['ferme', 'distribue', 'cloture', 'cloture_forcee'])->count();
             $tourOuvert = $c->tours->where('statut', 'ouvert')->first();
 
             return [
@@ -186,7 +211,11 @@ class CycleController extends Controller
         });
 
         return Inertia::render('Cycles/Index', [
-            'cycles' => $cycles
+            'cycles' => $cyclesPaginated,
+            'filters' => [
+                'search' => $search,
+                'statut' => $statut ?? 'tous',
+            ],
         ]);
     }
 
@@ -281,6 +310,9 @@ class CycleController extends Controller
                 ]);
             }
         }
+
+        // Si la date de début est aujourd'hui ou antérieure, démarrer immédiatement le cycle
+        $this->traiterDemarrageAutomatique();
 
         return redirect()->route('cycles.index')->with('success', 'Cycle créé avec succès.');
     }
@@ -380,6 +412,10 @@ class CycleController extends Controller
     {
         $this->checkGestionnaire();
 
+        if ($cycle->statut !== 'brouillon') {
+            return redirect()->route('cycles.show', $cycle->id)->with('error', 'Seul un cycle au statut brouillon peut être modifié.');
+        }
+
         $cycle->load(['membres' => function ($q) {
             $q->orderBy('cycle_member.rang');
         }]);
@@ -428,40 +464,7 @@ class CycleController extends Controller
             return redirect()->back()->with('error', 'Aucun membre dans le cycle.');
         }
 
-        $dateDebut = Carbon::parse($cycle->date_debut);
-
-        foreach ($participants as $participant) {
-            // Calcul date prévue du tour selon périodicité
-            $offset = $participant->rang - 1;
-            if ($cycle->periodicite === 'trimestrielle') {
-                $datePrevue = $dateDebut->copy()->addMonths($offset * 3);
-            } elseif ($cycle->periodicite === 'semestrielle') {
-                $datePrevue = $dateDebut->copy()->addMonths($offset * 6);
-            } elseif ($cycle->periodicite === 'annuelle') {
-                $datePrevue = $dateDebut->copy()->addYears($offset);
-            } else {
-                $datePrevue = $dateDebut->copy()->addMonths($offset);
-            }
-
-            // Statut enum dans la table tours : 'en_attente', 'ouvert', 'ferme'
-            $tour = Tours::create([
-                'cycle_id'        => $cycle->id,
-                'beneficiaire_id' => $participant->member_id,
-                'numero'          => $participant->rang,
-                'date_prevue'     => $datePrevue->toDateString(),
-                'statut'          => $participant->rang == 1 ? 'ouvert' : 'en_attente',
-            ]);
-
-            foreach ($participants as $cotisant) {
-                Cotisation::create([
-                    'tour_id'         => $tour->id,
-                    'membre_id'       => $cotisant->member_id,
-                    'montant_attendu' => $cycle->montant_cotisation,
-                    'montant_paye'    => 0,
-                    'statut'          => 'en_attente',
-                ]);
-            }
-        }
+        (new TourService())->genererTours($cycle);
 
         $cycle->update(['statut' => 'actif']);
 
@@ -478,44 +481,82 @@ class CycleController extends Controller
     }
 
     /**
+     * Changer l'ordre / bénéficiaire par les flèches monter/descendre sur les membres (Demande utilisateur)
+     */
+    public function swapRangMembre(Request $request, Cycle $cycle, members $membre)
+    {
+        $this->checkPermission('changer_beneficiaire');
+
+        $direction = $request->input('direction'); // 'up' ou 'down'
+        if (!in_array($direction, ['up', 'down'])) {
+            return redirect()->back()->with('error', 'Direction invalide.');
+        }
+
+        $currentEntry = CycleMembers::where('cycle_id', $cycle->id)->where('member_id', $membre->id)->first();
+        if (!$currentEntry) {
+            return redirect()->back()->with('error', 'Membre non trouvé dans ce cycle.');
+        }
+
+        $currentRang = $currentEntry->rang;
+        $targetRang = $direction === 'up' ? $currentRang - 1 : $currentRang + 1;
+
+        $targetEntry = CycleMembers::where('cycle_id', $cycle->id)->where('rang', $targetRang)->first();
+        if (!$targetEntry) {
+            return redirect()->back()->with('error', 'Impossible de déplacer ce membre dans cette direction.');
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($cycle, $currentEntry, $targetEntry, $currentRang, $targetRang) {
+            // Swap dans cycle_member
+            $currentEntry->update(['rang' => $targetRang]);
+            $targetEntry->update(['rang' => $currentRang]);
+
+            // Swap des bénéficiaires dans la table tours si les tours existent
+            $tourCurrent = Tours::where('cycle_id', $cycle->id)->where('numero', $currentRang)->first();
+            $tourTarget = Tours::where('cycle_id', $cycle->id)->where('numero', $targetRang)->first();
+
+            if ($tourCurrent && $tourTarget) {
+                // Ne pas modifier les tours déjà clôturés
+                if (in_array($tourCurrent->statut, ['cloture', 'cloture_forcee', 'ferme']) || in_array($tourTarget->statut, ['cloture', 'cloture_forcee', 'ferme'])) {
+                    throw new \Exception('Impossible de modifier le bénéficiaire d\'un tour déjà clôturé.');
+                }
+
+                $memberIdCurrent = $currentEntry->member_id;
+                $memberIdTarget = $targetEntry->member_id;
+
+                $tourCurrent->update(['beneficiaire_id' => $memberIdTarget]);
+                $tourTarget->update(['beneficiaire_id' => $memberIdCurrent]);
+            }
+        });
+
+        return redirect()->back()->with('success', 'Ordre des bénéficiaires mis à jour avec succès.');
+    }
+
+    /**
+     * Clôture forcée d'un tour avec motif obligatoire
+     */
+    public function clotureForceeTour(Request $request, Cycle $cycle, Tours $tour)
+    {
+        $this->checkPermission('cloturer_tour');
+
+        $request->validate([
+            'motif' => 'required|string|min:3',
+        ]);
+
+        (new TourService())->cloturerTour($cycle, $tour, $request->input('motif'), Auth::id());
+
+        return redirect()->back()->with('success', "Le tour {$tour->numero} a fait l'objet d'une clôture forcée avec succès.");
+    }
+
+    /**
      * Clôturer le tour courant et ouvrir le suivant
      */
     public function cloturerTour(Cycle $cycle, Tours $tour)
     {
         $this->checkPermission('cloturer_tour');
 
-        // 1. Fermer le tour actuel
-        $tour->update(['statut' => 'ferme']);
+        (new TourService())->cloturerTour($cycle, $tour, null, Auth::id());
 
-        // 2. Ouvrir le prochain tour
-        $prochainTour = Tours::where('cycle_id', $cycle->id)
-            ->where('numero', $tour->numero + 1)
-            ->first();
-
-        if ($prochainTour) {
-            $prochainTour->update(['statut' => 'ouvert']);
-            // Notification : nouveau tour ouvert
-            Notification::create([
-                'type'     => 'tour_ouvert',
-                'titre'    => "Tour {$prochainTour->numero} ouvert — {$cycle->libelle}",
-                'message'  => "Le tour {$tour->numero} du cycle « {$cycle->libelle} » a été clôturé. Le tour {$prochainTour->numero} est maintenant ouvert.",
-                'cycle_id' => $cycle->id,
-                'tour_id'  => $prochainTour->id,
-                'lue'      => false,
-            ]);
-            return redirect()->back()->with('success', "Le tour {$tour->numero} a été clôturé. Le tour {$prochainTour->numero} est maintenant ouvert.");
-        } else {
-            // S'il n'y a plus de tour suivant, le cycle est terminé
-            $cycle->update(['statut' => 'termine']);
-            Notification::create([
-                'type'     => 'cycle_termine',
-                'titre'    => "Cycle terminé : {$cycle->libelle}",
-                'message'  => "Le dernier tour du cycle « {$cycle->libelle} » a été clôturé. Le cycle est maintenant terminé.",
-                'cycle_id' => $cycle->id,
-                'lue'      => false,
-            ]);
-            return redirect()->back()->with('success', "Dernier tour clôturé. Le cycle est désormais terminé.");
-        }
+        return redirect()->back()->with('success', "Le tour {$tour->numero} a été clôturé.");
     }
 
     /**
@@ -537,9 +578,34 @@ class CycleController extends Controller
     {
         $this->checkGestionnaire();
 
-        $cycle->delete();
+        if ($cycle->statut !== 'brouillon') {
+            return redirect()->back()->with('error', 'Seul un cycle au statut brouillon peut être supprimé.');
+        }
 
-        return redirect()->route('cycles.index')->with('success', 'Cycle supprimé.');
+        \Illuminate\Support\Facades\DB::transaction(function () use ($cycle) {
+            // Supprimer les cotisations et pénalités associées aux tours du cycle
+            $tourIds = $cycle->tours()->pluck('id')->toArray();
+            if (!empty($tourIds)) {
+                $cotisationIds = \Modules\Cotisation\Models\Cotisation::whereIn('tour_id', $tourIds)->pluck('id')->toArray();
+                if (!empty($cotisationIds)) {
+                    \Modules\Cotisation\Models\Penalites::whereIn('cotisation_id', $cotisationIds)->delete();
+                    \Modules\Cotisation\Models\Paiements::whereIn('cotisation_id', $cotisationIds)->delete();
+                    \Modules\Cotisation\Models\Cotisation::whereIn('id', $cotisationIds)->delete();
+                }
+                \Modules\Cycle\Models\Tours::whereIn('id', $tourIds)->delete();
+            }
+
+            // Supprimer les liaisons cycle_member
+            CycleMembers::where('cycle_id', $cycle->id)->delete();
+
+            // Supprimer les notifications liées
+            \Modules\Administration\Models\Notification::where('cycle_id', $cycle->id)->delete();
+
+            // Supprimer le cycle
+            $cycle->delete();
+        });
+
+        return redirect()->route('cycles.index')->with('success', 'Cycle brouillon supprimé avec succès.');
     }
 
     /**
@@ -549,11 +615,16 @@ class CycleController extends Controller
     {
         $this->checkGestionnaire();
 
+        if ($cycle->statut !== 'brouillon') {
+            return redirect()->route('cycles.show', $cycle->id)->with('error', 'Seul un cycle au statut brouillon peut être modifié.');
+        }
+
         $data = $request->validate([
             'libelle'               => 'required|string',
             'montant_cotisation'    => 'required|numeric|min:1',
             'periodicite'           => 'required|string',
             'date_debut'            => 'required|date',
+            'date_fin'              => 'nullable|date',
             'delai_tolerance_jours' => 'nullable|integer|min:0',
             'montant_penalite'      => 'nullable|numeric|min:0',
             'frais_gestion'         => 'nullable|numeric|min:0',
@@ -561,15 +632,35 @@ class CycleController extends Controller
         ]);
 
         $periodicite = strtolower(trim($data['periodicite']));
-        if (!in_array($periodicite, ['mensuelle', 'trimestrielle', 'semestrielle', 'annuelle'])) {
+        $validPeriodicites = ['mensuelle', 'trimestrielle', 'semestrielle', 'annuelle'];
+        if (!in_array($periodicite, $validPeriodicites)) {
             $periodicite = 'mensuelle';
+        }
+
+        $membresIds = $request->input('membres', []);
+        $nbMembres = max(1, count($membresIds));
+        $dateDebut = Carbon::parse($data['date_debut']);
+
+        if (empty($data['date_fin'])) {
+            if ($periodicite === 'mensuelle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres);
+            } elseif ($periodicite === 'trimestrielle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres * 3);
+            } elseif ($periodicite === 'semestrielle') {
+                $dateFin = $dateDebut->copy()->addMonths($nbMembres * 6);
+            } else {
+                $dateFin = $dateDebut->copy()->addYears($nbMembres);
+            }
+        } else {
+            $dateFin = Carbon::parse($data['date_fin']);
         }
 
         $cycle->update([
             'libelle'               => $data['libelle'],
             'montant_cotisation'    => $data['montant_cotisation'],
             'periodicite'           => $periodicite,
-            'date_debut'            => $data['date_debut'],
+            'date_debut'            => $dateDebut->toDateString(),
+            'date_fin'              => $dateFin->toDateString(),
             'delai_tolerance_jours' => $data['delai_tolerance_jours'] ?? 0,
             'montant_penalite'      => $data['montant_penalite'] ?? 0,
             'frais_gestion'         => $data['frais_gestion'] ?? 0,
@@ -586,6 +677,9 @@ class CycleController extends Controller
                 ]);
             }
         }
+
+        // Si la date de début est aujourd'hui ou passée, démarrer immédiatement le cycle
+        $this->traiterDemarrageAutomatique();
 
         return redirect()->route('cycles.index')->with('success', 'Cycle modifié avec succès.');
     }
@@ -668,12 +762,12 @@ class CycleController extends Controller
     {
         $today = Carbon::today()->toDateString();
 
-        // Récupérer les cycles en attente ou brouillon dont date_debut <= aujourd'hui
         $cyclesADemarrer = Cycle::whereIn('statut', ['en_attente', 'brouillon'])
             ->where('date_debut', '<=', $today)
             ->get();
 
         $count = 0;
+        $tourService = new TourService();
 
         foreach ($cyclesADemarrer as $cycle) {
             $participants = CycleMembers::where('cycle_id', $cycle->id)->orderBy('rang')->get();
@@ -681,51 +775,16 @@ class CycleController extends Controller
                 continue;
             }
 
-            // Générer les tours si non encore générés
             if ($cycle->tours()->count() == 0) {
-                $dateDebut = Carbon::parse($cycle->date_debut);
-
-                foreach ($participants as $participant) {
-                    $offset = $participant->rang - 1;
-                    if ($cycle->periodicite === 'trimestrielle') {
-                        $datePrevue = $dateDebut->copy()->addMonths($offset * 3);
-                    } elseif ($cycle->periodicite === 'semestrielle') {
-                        $datePrevue = $dateDebut->copy()->addMonths($offset * 6);
-                    } elseif ($cycle->periodicite === 'annuelle') {
-                        $datePrevue = $dateDebut->copy()->addYears($offset);
-                    } else {
-                        $datePrevue = $dateDebut->copy()->addMonths($offset);
-                    }
-
-                    $tour = Tours::create([
-                        'cycle_id'        => $cycle->id,
-                        'beneficiaire_id' => $participant->member_id,
-                        'numero'          => $participant->rang,
-                        'date_prevue'     => $datePrevue->toDateString(),
-                        'statut'          => $participant->rang == 1 ? 'ouvert' : 'en_attente',
-                    ]);
-
-                    foreach ($participants as $cotisant) {
-                        Cotisation::create([
-                            'tour_id'         => $tour->id,
-                            'membre_id'       => $cotisant->member_id,
-                            'montant_attendu' => $cycle->montant_cotisation,
-                            'montant_paye'    => 0,
-                            'statut'          => 'en_attente',
-                        ]);
-                    }
-                }
+                $tourService->genererTours($cycle);
             } else {
-                // Si des tours existent déjà, ouvrir le premier tour
                 $premierTour = $cycle->tours()->where('numero', 1)->first();
-                if ($premierTour && $premierTour->statut === 'en_attente') {
+                if ($premierTour && in_array($premierTour->statut, ['en_attente', 'brouillon'])) {
                     $premierTour->update(['statut' => 'ouvert']);
                 }
             }
 
-            // Statut actif
             $cycle->update(['statut' => 'actif']);
-            // Notification automatique
             Notification::create([
                 'type'     => 'cycle_demarre',
                 'titre'    => "Cycle démarré automatiquement : {$cycle->libelle}",
@@ -735,6 +794,9 @@ class CycleController extends Controller
             ]);
             $count++;
         }
+
+        // Exécuter également la vérification des échéances et tolérance
+        $tourService->traiterToursAutomatique();
 
         return $count;
     }

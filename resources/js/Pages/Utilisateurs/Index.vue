@@ -58,9 +58,9 @@
                 <div class="md:col-span-5 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
                     <h2 class="text-base font-bold text-gray-900">Créer un compte</h2>
 
-                    <form @submit.prevent="submit" class="space-y-4">
+                    <form v-if="canCreateUser" @submit.prevent="submit" class="space-y-4">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Nom complet</label>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Nom complet <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.name"
                                 type="text"
@@ -71,7 +71,7 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Email</label>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Email <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.email"
                                 type="email"
@@ -82,7 +82,7 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Mot de passe provisoire</label>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Mot de passe provisoire <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.password"
                                 type="password"
@@ -94,14 +94,14 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Rôle</label>
+                            <label class="block text-xs font-semibold text-gray-800 mb-1.5">Rôle <span class="text-red-500 font-bold">*</span></label>
                             <select
                                 v-model="form.role"
                                 class="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A]"
                             >
                                 <option value="tresorier">Trésorier</option>
                                 <option value="gestionnaire">Gestionnaire</option>
-                                <option value="administrateur">Administrateur</option>
+                                <option v-if="isSuperAdmin" value="administrateur">Administrateur</option>
                             </select>
                             <p v-if="form.errors.role" class="mt-1 text-xs text-red-600">{{ form.errors.role }}</p>
                         </div>
@@ -122,11 +122,15 @@
                         <button
                             type="submit"
                             :disabled="form.processing"
-                            class="w-full py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50 mt-2"
+                            class="w-full py-2.5 bg-[#1B6B4A] hover:bg-[#155A3E] text-white text-sm font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50 mt-2 cursor-pointer"
                         >
                             Créer le compte
                         </button>
                     </form>
+
+                    <div v-else class="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                        Vous ne disposez pas de l'autorisation requise pour créer de nouveaux comptes utilisateurs.
+                    </div>
                 </div>
             </div>
         </div>
@@ -134,8 +138,11 @@
 </template>
 
 <script setup>
-import { useForm } from '@inertiajs/vue3'
+import { computed } from 'vue'
+import { useForm, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+
+const page = usePage()
 
 const props = defineProps({
     users: {
@@ -146,6 +153,18 @@ const props = defineProps({
         type: Array,
         default: () => []
     },
+})
+
+const canCreateUser = computed(() => {
+    if (page.props.auth?.user?.permissions) {
+        return !!page.props.auth.user.permissions.creer_utilisateur
+    }
+    const role = page.props.auth?.user?.role
+    return role === 'administrateur' || role === 'gestionnaire'
+})
+
+const isSuperAdmin = computed(() => {
+    return page.props.auth?.user?.role === 'administrateur'
 })
 
 const form = useForm({

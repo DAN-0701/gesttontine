@@ -20,7 +20,7 @@
                     <!-- Row 1: Nom & Prénom -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Nom</label>
+                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Nom <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.nom"
                                 type="text"
@@ -30,7 +30,7 @@
                             <p v-if="form.errors.nom" class="mt-1 text-xs text-red-600">{{ form.errors.nom }}</p>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Prénom</label>
+                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Prénom <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.prenom"
                                 type="text"
@@ -44,7 +44,7 @@
                     <!-- Row 2: Téléphone & Email -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Téléphone</label>
+                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Téléphone <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.telephone"
                                 type="text"
@@ -74,7 +74,7 @@
 
                     <!-- Row 3: Adresse -->
                     <div>
-                        <label class="block text-xs font-semibold text-gray-900 mb-1.5">Adresse</label>
+                        <label class="block text-xs font-semibold text-gray-900 mb-1.5">Adresse <span class="text-red-500 font-bold">*</span></label>
                         <input
                             v-model="form.adresse"
                             type="text"
@@ -87,7 +87,7 @@
                     <!-- Row 4: Date d'adhésion & Statut -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Date d'adhésion</label>
+                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Date d'adhésion <span class="text-red-500 font-bold">*</span></label>
                             <input
                                 v-model="form.date_adhesion"
                                 type="date"
@@ -96,7 +96,7 @@
                             <p v-if="form.errors.date_adhesion" class="mt-1 text-xs text-red-600">{{ form.errors.date_adhesion }}</p>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Statut</label>
+                            <label class="block text-xs font-semibold text-gray-900 mb-1.5">Statut <span class="text-red-500 font-bold">*</span></label>
                             <select
                                 v-model="form.statut"
                                 class="w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#1B6B4A] focus:border-transparent"

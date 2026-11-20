@@ -16,6 +16,13 @@ class user extends Controller
      */
     public function index()
     {
+        $authUser = Auth::user();
+        if ($authUser && method_exists($authUser, 'hasPermission')) {
+            if (!$authUser->hasPermission('creer_utilisateur') && $authUser->role !== 'administrateur') {
+                abort(403, "Action non autorisée : permission 'creer_utilisateur' requise.");
+            }
+        }
+
         $users = Users::all()->map(fn ($u) => [
             'id'    => $u->id,
             'name'  => $u->name,
@@ -38,6 +45,13 @@ class user extends Controller
      * Création d'un nouvel utilisateur
      */
     public function store(Request $request){
+        $authUser = Auth::user();
+        if ($authUser && method_exists($authUser, 'hasPermission')) {
+            if (!$authUser->hasPermission('creer_utilisateur')) {
+                abort(403, "Action non autorisée : permission 'creer_utilisateur' requise.");
+            }
+        }
+
         $data = $request->validate([
             'name'      => 'required|string',
             'email'     => 'required|email|unique:users,email',
@@ -45,6 +59,11 @@ class user extends Controller
             'role'      => 'required|in:administrateur,gestionnaire,tresorier',
             'member_id' => 'nullable|integer',
         ]);
+
+        // Seul un administrateur peut créer un autre administrateur
+        if ($data['role'] === 'administrateur' && (!$authUser || $authUser->role !== 'administrateur')) {
+            abort(403, 'Seul un administrateur peut créer un compte avec le rôle Administrateur.');
+        }
 
         Users::create([
             'name'     => $data['name'],
@@ -74,9 +93,13 @@ class user extends Controller
 
         $request->session()->regenerate();
 
+        $authUser = Auth::user();
+
         return response()->json([
-            'message' => 'connexion reussi',
-            'user'    => Auth::user()
+            'message'               => 'connexion reussi',
+            'user'                  => $authUser,
+            'force_password_change' => (bool) $authUser->force_password_change,
+            'redirect'              => $authUser->force_password_change ? '/mot-de-passe-obligatoire' : '/dashboard'
         ]);
     }
 

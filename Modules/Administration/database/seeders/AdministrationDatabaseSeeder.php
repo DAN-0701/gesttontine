@@ -62,6 +62,14 @@ class AdministrationDatabaseSeeder extends Seeder
                 'description' => 'Annuler une pénalité avec motif justificatif',
             ],
             [
+                'nom' => 'creer_utilisateur',
+                'description' => 'Créer de nouveaux utilisateurs du système',
+            ],
+            [
+                'nom' => 'changer_beneficiaire',
+                'description' => 'Modifier le membre bénéficiaire d\'un tour de cycle',
+            ],
+            [
                 'nom' => 'consulter',
                 'description' => 'Consulter les tableaux de bord, cycles et membres',
             ],

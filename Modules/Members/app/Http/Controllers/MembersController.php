@@ -51,7 +51,7 @@ class MembersController extends Controller
             }
         }
 
-        $membres = $query->get();
+        $membres = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
 
         return Inertia::render('Membres/Index', [
             'membres' => $membres,
@@ -165,6 +165,35 @@ class MembersController extends Controller
 
         $message = $nouveauStatut === 'desactive' ? 'Membre désactivé avec succès.' : 'Membre réactivé avec succès.';
         return redirect()->back()->with('success', $message);
+    }
+
+    /**
+     * Télécharger un modèle CSV / Excel d'exemple pour l'import des membres
+     */
+    public function template()
+    {
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="modele_import_membres.csv"',
+        ];
+
+        $callback = function () {
+            $handle = fopen('php://output', 'w');
+            // BOM UTF-8 pour Excel
+            fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // En-têtes des colonnes
+            fputcsv($handle, ['nom', 'prenom', 'telephone', 'email', 'adresse', 'date_adhesion', 'statut'], ';');
+
+            // Exemples
+            fputcsv($handle, ['Kouassi', 'Jean', '0701992231', 'jean.kouassi@email.com', 'Abidjan Cocody', '2026-01-15', 'actif'], ';');
+            fputcsv($handle, ['Konan', 'Amoin Estelle', '0502334455', 'estelle.konan@email.com', 'Yopougon Selmer', '2026-02-01', 'actif'], ';');
+            fputcsv($handle, ['Diallo', 'Mamadou', '0103445566', '', 'Treichville Arras', '2026-02-10', 'actif'], ';');
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     /**
@@ -346,7 +375,10 @@ class MembersController extends Controller
         }
 
         $imported = 0;
-        $ignored = 0;
+        $ignoredDb = 0;
+        $ignoredFileDuplicates = 0;
+        $missingInfo = 0;
+        $seenInFile = [];
 
         for ($i = 1; $i < count($rows); $i++) {
             $row = $rows[$i];
@@ -365,14 +397,21 @@ class MembersController extends Controller
             $statut    = in_array($statutVal, ['actif', 'desactive']) ? $statutVal : 'actif';
 
             if (!$nom || !$prenom || !$telephone) {
-                $ignored++;
+                $missingInfo++;
                 continue;
             }
 
-            // Éviter les doublons par téléphone
+            // Détecter doublon dans le fichier lui-même
+            if (isset($seenInFile[$telephone])) {
+                $ignoredFileDuplicates++;
+                continue;
+            }
+            $seenInFile[$telephone] = true;
+
+            // Éviter les doublons déjà présents en base de données
             $exists = members::where('telephone', $telephone)->exists();
             if ($exists) {
-                $ignored++;
+                $ignoredDb++;
                 continue;
             }
 
@@ -388,6 +427,19 @@ class MembersController extends Controller
             $imported++;
         }
 
-        return redirect()->back()->with('success', "Importation réussie : {$imported} membre(s) créé(s), {$ignored} ignoré(s) ou doublon(s).");
+        $details = [];
+        $details[] = "{$imported} membre(s) créé(s)";
+        if ($ignoredFileDuplicates > 0) {
+            $details[] = "{$ignoredFileDuplicates} doublon(s) dans le fichier (enregistré une seule fois)";
+        }
+        if ($ignoredDb > 0) {
+            $details[] = "{$ignoredDb} déjà existant(s) en base (ignorés)";
+        }
+        if ($missingInfo > 0) {
+            $details[] = "{$missingInfo} ligne(s) avec informations incomplètes";
+        }
+
+        $message = "Résultat de l'import : " . implode(', ', $details) . ".";
+        return redirect()->back()->with('success', $message);
     }
 }

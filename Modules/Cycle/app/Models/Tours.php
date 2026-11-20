@@ -8,14 +8,19 @@ use Modules\Members\Models\members;
 
 class Tours extends Model
 {
-    public $timestamps = false;
-
     protected $fillable = [
         'cycle_id',
         'beneficiaire_id',
         'numero',
+        'date_ouverture',
+        'date_echeance',
         'date_prevue',
-        'statut'
+        'montant_distribue',
+        'statut',
+        'distribue_le',
+        'cloture_le',
+        'motif_cloture_forcee',
+        'cloture_par',
     ];
 
     public function cycle()
@@ -26,6 +31,11 @@ class Tours extends Model
     public function beneficiaire()
     {
         return $this->belongsTo(members::class, 'beneficiaire_id');
+    }
+
+    public function cloturePar()
+    {
+        return $this->belongsTo(\App\Models\Users::class, 'cloture_par');
     }
 
     public function cotisations()
